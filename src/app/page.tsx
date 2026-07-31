@@ -1,31 +1,29 @@
 import { PRODUCT } from "@/config/product";
+import { StartForm } from "./StartForm";
 
-/**
- * Placeholder shell. The real input screen and read screens land next; this
- * exists so the app builds and runs while the pipeline is wired up.
- */
 export default function Home() {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-20">
-      <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-[var(--color-faint)]">
-        {PRODUCT.name}
-      </p>
-      <h1 className="mt-4 text-4xl font-semibold tracking-tight text-balance">
-        {PRODUCT.tagline}
-      </h1>
-      <p className="mt-6 max-w-[60ch] text-[var(--color-muted)]">
-        The assessment pipeline is wired up and runs from the command line.
-        The web input screen is next.
-      </p>
+    <main className="mx-auto max-w-[1000px] px-6 pb-24">
+      <header className="flex items-center justify-between gap-4 py-5">
+        <span className="font-mono text-xs font-semibold uppercase tracking-[0.3em]">
+          {PRODUCT.name}
+        </span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--color-faint)]">
+          Assessment only · nothing is kept
+        </span>
+      </header>
 
-      <div className="mt-10 border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
-        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
-          Run a read now
+      <div className="flex flex-col gap-3 pb-8 pt-6">
+        <h1 className="max-w-[18ch] text-balance font-serif text-5xl font-semibold leading-[1.08]">
+          Where do you actually stand?
+        </h1>
+        <p className="max-w-[54ch] text-[17px] text-[var(--color-muted)]">
+          Tell me the role you&rsquo;re after and what you&rsquo;ve got. You&rsquo;ll
+          get an honest read on the distance, and the shortest route across it.
         </p>
-        <pre className="mt-3 overflow-x-auto text-sm">
-          <code>npm run spike -- --posting &lt;url&gt; --cv &lt;file.pdf&gt;</code>
-        </pre>
       </div>
+
+      <StartForm />
     </main>
   );
 }
