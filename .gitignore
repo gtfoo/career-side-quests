@@ -1,0 +1,24 @@
+node_modules/
+.next/
+out/
+build/
+
+# Secrets — never commit.
+.env
+.env.local
+.env*.local
+
+# Runtime data (SQLite, caches). Survives deploys; not tracked.
+data/
+
+# Anything a user uploaded. Resumes are PII — they must never reach git.
+uploads/
+*.pdf
+*.docx
+
+next-env.d.ts
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+.DS_Store
+*.log

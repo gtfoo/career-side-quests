@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/*
+ * Desktop-first: this is used on a laptop with a job posting open in the next
+ * tab. Small-screen work is deliberately deferred (see AGENTS.md).
+ *
+ * The palette is defined here rather than inline so the eventual brand is one
+ * edit, matching the name-proofing in src/config/product.ts.
+ */
+@theme {
+  --color-paper: #e9ede7;
+  --color-surface: #fbfcfa;
+  --color-sunken: #dfe5dd;
+  --color-ink: #131a16;
+  --color-muted: #57635c;
+  --color-faint: #7e8a83;
+  --color-rule: #cbd3cb;
+
+  /* Semantic, and separate from any brand accent: what carries over, what is
+     missing, what cannot be shortcut. */
+  --color-carry: #0e6e62;
+  --color-gap: #a96a0c;
+  --color-block: #a33f2e;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-paper: #0f1512;
+    --color-surface: #161d19;
+    --color-sunken: #1d2621;
+    --color-ink: #e4eae5;
+    --color-muted: #93a099;
+    --color-faint: #71807a;
+    --color-rule: #2a342e;
+    --color-carry: #45bfac;
+    --color-gap: #dfa24e;
+    --color-block: #e87b67;
+  }
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
