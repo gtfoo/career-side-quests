@@ -51,6 +51,11 @@ pass is meant to run on a *different lab's* model than the scoring pass, because
 same-model self-critique shares the same blind spots. Set the provider per stage
 via env, and settle disputes with the eval set in `evals/`, not by preference.
 
+Preference order is **OpenAI → Anthropic → Google**. The first provider with a
+key becomes the primary; the next distinct one runs the adversarial pass. This
+order is a project decision, not a technical one — change `PROVIDER_ORDER` if it
+changes, and don't hardcode a provider anywhere else.
+
 ## Deploying
 
 Mirrors carpark-sg: push to `main` → GitHub Actions SSHes to the droplet and

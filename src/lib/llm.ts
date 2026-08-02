@@ -1,6 +1,7 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { generateObject, type LanguageModel } from "ai";
 import type { z } from "zod";
 
@@ -33,19 +34,27 @@ export type Stage =
   | "quest"
   | "quiz";
 
-/** Which providers actually have credentials right now. */
+/**
+ * Provider preference, most-preferred first. The first one with a key becomes
+ * the primary; the next distinct one becomes the adversary.
+ */
+const PROVIDER_ORDER = ["openai", "anthropic", "google"] as const;
+
+const ENV_KEY: Record<string, string> = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GOOGLE_GENERATIVE_AI_API_KEY",
+};
+
+/** Which providers actually have credentials right now, in preference order. */
 function availableProviders(): string[] {
-  return [
-    process.env.ANTHROPIC_API_KEY ? "anthropic" : null,
-    process.env.OPENAI_API_KEY ? "openai" : null,
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY ? "google" : null,
-  ].filter((p): p is string => Boolean(p));
+  return PROVIDER_ORDER.filter((p) => Boolean(process.env[ENV_KEY[p]!]));
 }
 
 /** The model we reach for first on each provider, for judgement-heavy work. */
 const PREFERRED: Record<string, string> = {
-  anthropic: "anthropic:claude-opus-4-8",
   openai: "openai:gpt-5",
+  anthropic: "anthropic:claude-opus-4-8",
   google: "google:gemini-flash-latest",
 };
 
@@ -64,7 +73,7 @@ function stageDefault(stage: Stage): string {
     // Named so the error says what to do, rather than failing on a missing key
     // somewhere deep in a provider SDK.
     throw new Error(
-      "No model provider configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY or " +
+      "No model provider configured. Set OPENAI_API_KEY, ANTHROPIC_API_KEY or " +
         "GOOGLE_GENERATIVE_AI_API_KEY in .env.local (see .env.example).",
     );
   }
@@ -141,16 +150,32 @@ export function resolveChain(stage: Stage): string[] {
  * without it. `budget_tokens` and temperature/top_p/top_k are rejected outright
  * on current models; effort is the only depth dial.
  */
-function providerOptions(spec: string, stage: Stage) {
+function providerOptions(
+  spec: string,
+  stage: Stage,
+): ProviderOptions | undefined {
   const provider = spec.slice(0, spec.indexOf(":"));
+  const effort = STAGE_EFFORT[stage];
+
   if (provider === "anthropic") {
     return {
       anthropic: {
         thinking: { type: "adaptive" as const },
-        outputConfig: { effort: STAGE_EFFORT[stage] },
+        outputConfig: { effort },
       },
     };
   }
+
+  if (provider === "openai") {
+    // The reasoning models take low/medium/high only — there is no "xhigh", so
+    // the top tier clamps rather than erroring on the stages that ask for it.
+    return {
+      openai: {
+        reasoningEffort: effort === "xhigh" ? "high" : effort,
+      },
+    };
+  }
+
   return undefined;
 }
 
@@ -158,16 +183,28 @@ function providerOptions(spec: string, stage: Stage) {
 export function isConfigured(stage: Stage): boolean {
   const spec = resolveChain(stage)[0]!;
   const provider = spec.slice(0, spec.indexOf(":"));
-  switch (provider) {
-    case "anthropic":
-      return Boolean(process.env.ANTHROPIC_API_KEY);
-    case "openai":
-      return Boolean(process.env.OPENAI_API_KEY);
-    case "google":
-      return Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY);
-    default:
-      return false;
-  }
+  const key = ENV_KEY[provider];
+  return Boolean(key && process.env[key]);
+}
+
+/** What is actually wired up right now — surfaced in the UI and in evals. */
+export function providerStatus(): {
+  available: string[];
+  primary: string | null;
+  adversary: string | null;
+  crossLab: boolean;
+} {
+  const available = availableProviders();
+  const primary = available[0] ?? null;
+  const adversary = available.find((p) => p !== primary) ?? primary;
+  return {
+    available,
+    primary,
+    adversary,
+    // The adversarial pass is only worth much when it runs on a different lab's
+    // model — one key means it degrades to self-critique.
+    crossLab: Boolean(primary && adversary && primary !== adversary),
+  };
 }
 
 /**
