@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "spike": "tsx scripts/spike.ts",
     "try-posting": "tsx scripts/try-posting.ts",
-    "check-routing": "tsx scripts/check-routing.ts"
+    "check-routing": "tsx scripts/check-routing.ts",
+    "diagnose": "tsx scripts/diagnose-quotes.ts"
   },
   "keywords": [],
   "author": "",

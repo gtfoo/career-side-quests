@@ -10,7 +10,7 @@
         "--",
         "bash",
         "-c",
-        "cd /home/gtfoo/Git/role-match && export PATH=/home/gtfoo/.nvm/versions/node/v20.20.2/bin:/usr/local/bin:/usr/bin:/bin && exec npm run dev -- -H 0.0.0.0 -p 3002"
+        "cd /home/gtfoo/Git/career-side-quests && export PATH=/home/gtfoo/.nvm/versions/node/v20.20.2/bin:/usr/local/bin:/usr/bin:/bin && exec npm run dev -- -H 0.0.0.0 -p 3002"
       ],
       "port": 3002,
       "autoPort": false

@@ -1,17 +1,21 @@
-import { extractText, getDocumentProxy } from "unpdf";
+import { getDocumentProxy } from "unpdf";
 
 /**
  * Turning whatever the user uploaded into text.
  *
- * This exists in its current shape because of a real failure: a 14-page CV
- * where only page 1 had a text layer. Text extraction returned zero characters
- * for pages 2-14 and reported no error at all. Scoring would have run on 7% of
- * the evidence and produced a confident, wrong answer.
+ * Two real failures shaped this file, and both were silent:
  *
- * So the ladder is: try the cheap path, MEASURE PER PAGE, and escalate only the
- * pages that came back empty. A silent partial parse is the worst outcome this
- * app can have, which is why coverage is reported to the user rather than
- * swallowed.
+ * 1. A CV whose later pages had no text layer at all. Extraction returned zero
+ *    characters and reported no error. So coverage is MEASURED PER PAGE and
+ *    surfaced, never swallowed.
+ *
+ * 2. A two-column CV where extraction returned every word but destroyed the
+ *    associations between them — all the language names, then all the
+ *    proficiency levels, so "Mandarin Chinese / Native" was true on the page
+ *    and absent from the text. Every quote citing it failed grounding, and the
+ *    candidate was under-scored for their CV template. Multi-column CVs are
+ *    extremely common, so extraction below is LAYOUT-AWARE: text items are
+ *    grouped into visual rows and ordered left-to-right within each row.
  */
 
 export type PageExtraction = {
@@ -39,21 +43,89 @@ export type SourceDoc = {
  */
 const MIN_CHARS_PER_PAGE = 40;
 
+/** A positioned run of text from the PDF's content stream. */
+type Item = { str: string; x: number; y: number; w: number };
+
+/**
+ * Rebuild a page's reading order from item positions.
+ *
+ * pdfjs hands back text runs in content-stream order, which for a multi-column
+ * layout means "everything in column one, then everything in column two". That
+ * reads fine as prose and is wrong as data: a label in one column loses its
+ * value in the other.
+ *
+ * So: group items into rows by y position, order each row by x, and insert a
+ * wide gap where there is real horizontal space — which is what keeps
+ * "Mandarin Chinese" attached to "Native / Bilingual" instead of stranding them
+ * fifteen lines apart.
+ */
+function layoutText(items: Item[]): string {
+  if (!items.length) return "";
+
+  // Rows tolerate small vertical jitter: superscripts, differing font sizes and
+  // baseline shifts should not each become their own line.
+  const ROW_TOLERANCE = 3;
+  const rows: Item[][] = [];
+
+  for (const item of [...items].sort((a, b) => b.y - a.y || a.x - b.x)) {
+    const row = rows[rows.length - 1];
+    if (row && Math.abs(row[0]!.y - item.y) <= ROW_TOLERANCE) row.push(item);
+    else rows.push([item]);
+  }
+
+  return rows
+    .map((row) => {
+      const sorted = row.sort((a, b) => a.x - b.x);
+      let line = "";
+      let prevEnd: number | null = null;
+      for (const it of sorted) {
+        if (prevEnd !== null) {
+          const gap = it.x - prevEnd;
+          // A gap wider than roughly a space is a column boundary or a tab
+          // stop. Two spaces keeps it visible without inventing structure.
+          line += gap > 12 ? "  " : gap > 1 ? " " : "";
+        }
+        line += it.str;
+        prevEnd = it.x + it.w;
+      }
+      return line.trimEnd();
+    })
+    .filter((l) => l.trim().length > 0)
+    .join("\n");
+}
+
 export async function extractPdf(
   bytes: Uint8Array,
   filename: string,
 ): Promise<SourceDoc> {
   const pdf = await getDocumentProxy(bytes);
-  const { text: perPage } = await extractText(pdf, { mergePages: false });
 
-  const pages: PageExtraction[] = perPage.map((raw, i) => {
-    const text = (raw ?? "").trim();
-    return {
-      page: i + 1,
+  const pages: PageExtraction[] = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const content = await page.getTextContent();
+
+    const items: Item[] = content.items
+      .filter((i): i is typeof i & { str: string } => "str" in i)
+      .map((i) => {
+        // transform is [a, b, c, d, e, f]; e/f are the x/y translation.
+        const t = (i as unknown as { transform: number[] }).transform;
+        return {
+          str: i.str,
+          x: t?.[4] ?? 0,
+          y: t?.[5] ?? 0,
+          w: (i as unknown as { width?: number }).width ?? 0,
+        };
+      })
+      .filter((i) => i.str.length > 0);
+
+    const text = layoutText(items).trim();
+    pages.push({
+      page: n,
       text,
       via: text.length >= MIN_CHARS_PER_PAGE ? "text_layer" : "none",
-    };
-  });
+    });
+  }
 
   const usable = pages.filter((p) => p.via === "text_layer");
   return {
