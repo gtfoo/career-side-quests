@@ -80,6 +80,19 @@ function stageDefault(stage: Stage): string {
   }
   const primary = available[0]!;
 
+  // Mechanical stages run cheapest-first. Their output is checked against the
+  // source verbatim, so a weaker model costs a retry rather than credibility —
+  // and these are the stages a free tier can actually absorb.
+  if (STAGE_TIER[stage] === "mechanical") {
+    const cheap: string[] = CHEAPEST_FIRST.filter((p) =>
+      available.includes(p),
+    );
+    // Stronger models still follow, so a free tier running out of quota
+    // degrades to a paid one instead of ending the read.
+    const rest = available.filter((p) => !cheap.includes(p));
+    return [...cheap, ...rest].map((p) => PREFERRED[p]!).join(",");
+  }
+
   // Every stage gets the other providers appended as a fallback chain. A key
   // that is out of credit or rate-limited should degrade to the next lab, not
   // end the run: an exhausted primary otherwise takes down a read that two
@@ -96,6 +109,36 @@ function stageDefault(stage: Stage): string {
 
   return chain.map((p) => PREFERRED[p]!).join(",");
 }
+
+/**
+ * Which stages can safely run on the cheapest available model.
+ *
+ * "mechanical" does not mean easy — it means WRONG ANSWERS GET CAUGHT. Both
+ * extraction stages must quote their sources verbatim, and every quote is
+ * checked as a literal substring before it is accepted (pipeline/validate.ts).
+ * A weaker model that invents a quote is rejected and asked again, so its
+ * failure mode is a retry rather than a false claim reaching the user.
+ *
+ * "judgement" stages have no such backstop. `match` decides a LEVEL, and no
+ * string check can tell a generous 3 from an honest 2 — so it stays on the
+ * strongest model configured and only the eval set may argue otherwise.
+ *
+ * Rate limits agree with this split: free tiers run around 15 requests/minute,
+ * which comfortably covers two sequential extraction calls per read and would
+ * be swamped instantly by the parallel per-requirement fan-out.
+ */
+const STAGE_TIER: Record<Stage, "mechanical" | "judgement"> = {
+  extract_jd: "mechanical",
+  extract_evidence: "mechanical",
+  quiz: "mechanical",
+  match: "judgement",
+  adversary: "judgement",
+  translate: "judgement",
+  quest: "judgement",
+};
+
+/** Cheapest first. Used only for mechanical stages. */
+const CHEAPEST_FIRST = ["google", "openai", "anthropic"] as const;
 
 /** Effort/thinking is provider-specific, so it lives with the model choice. */
 const STAGE_EFFORT: Record<Stage, "low" | "medium" | "high" | "xhigh"> = {
@@ -188,7 +231,22 @@ function providerOptions(
     };
   }
 
+  // Gemini deliberately gets no provider options. Thinking is billed from the
+  // same output allowance as the answer, which truncated a 40-atom extraction
+  // into invalid JSON (2,260 tokens reasoning, 270 emitting) — but this model
+  // rejects `thinkingConfig.thinkingBudget: 0` outright, so thinking cannot be
+  // turned off. The fix is a large enough output ceiling for both; see
+  // maxOutputTokens().
   return undefined;
+}
+
+/**
+ * Extraction returns one object containing every requirement or evidence atom,
+ * so its output is long by nature. The default ceilings are tuned for chat and
+ * truncate it — which surfaces as a schema error, not as "ran out of room".
+ */
+function maxOutputTokens(stage: Stage): number {
+  return STAGE_TIER[stage] === "mechanical" ? 16000 : 8000;
 }
 
 /** Whether a stage has credentials, so the UI only offers what will work. */
@@ -287,6 +345,7 @@ export async function generate<T>(args: {
         schema: args.schema,
         system: args.system,
         prompt: args.prompt,
+        maxOutputTokens: maxOutputTokens(args.stage),
         providerOptions: providerOptions(spec, args.stage),
       });
       // Record before returning, so no successful call can escape accounting.

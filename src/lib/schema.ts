@@ -107,15 +107,16 @@ export type CandidateProfile = z.infer<typeof CandidateProfile>;
 // --------------------------------------------------------------- the scoring
 
 /**
- * 0 = nothing at all, 1 = adjacent or self-asserted only,
- * 2 = real but partial, 3 = clearly demonstrated.
+ * 0 = nothing at all, 1 = self-asserted only, 2 = role implies it,
+ * 3 = a specific named artifact or outcome demonstrates it.
+ *
+ * Expressed as a bounded integer rather than a union of numeric literals.
+ * Gemini's structured-output schema rejects non-string enum values outright
+ * ("Invalid value at ...enum[0] (TYPE_STRING), 0"), so the literal union made
+ * this stage impossible to run there — which broke fallback exactly when it
+ * was needed most, with the two paid providers already exhausted.
  */
-export const Level = z.union([
-  z.literal(0),
-  z.literal(1),
-  z.literal(2),
-  z.literal(3),
-]);
+export const Level = z.number().int().min(0).max(3);
 
 export const RequirementMatch = z.object({
   requirementId: z.string(),

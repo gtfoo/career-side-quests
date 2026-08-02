@@ -147,6 +147,37 @@ export async function matchRequirement(args: {
  * prompt-cache prefix; the rest then read it instead of each paying to rewrite
  * it. Skips eligibility requirements — those are a gate, handled separately.
  */
+/**
+ * How many requirement calls may be in flight at once.
+ *
+ * Unbounded parallelism is free on a paid tier and fatal on a free one: Gemini's
+ * free tier allows 5 requests per MINUTE, so an eight-way fan-out 429s before
+ * the first response lands. Set MATCH_CONCURRENCY=1 to make a free tier viable
+ * (slower, but it completes).
+ */
+function concurrency(): number {
+  const raw = Number(process.env.MATCH_CONCURRENCY);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 4;
+}
+
+/** Run tasks with a ceiling on how many are in flight. */
+async function pooled<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export async function matchAll(args: {
   target: JobTarget;
   profile: CandidateProfile;
@@ -157,10 +188,12 @@ export async function matchAll(args: {
   );
   if (!scored.length) return [];
 
+  // The first call runs alone so it can write the shared prompt-cache prefix;
+  // the rest then read it instead of each paying to rewrite it.
   const [first, ...rest] = scored;
   const head = await matchRequirement({ ...args, requirement: first! });
-  const tail = await Promise.all(
-    rest.map((requirement) => matchRequirement({ ...args, requirement })),
+  const tail = await pooled(rest, concurrency(), (requirement) =>
+    matchRequirement({ ...args, requirement }),
   );
   return [head, ...tail];
 }
