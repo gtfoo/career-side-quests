@@ -95,6 +95,7 @@ export function checkIds(
  * unvalidated output would defeat the point.
  */
 export async function withValidation<T>(args: {
+  /** `feedback` is null on the first try; non-null means this is a retry. */
   attempt: (feedback: string | null) => Promise<T>;
   validate: (value: T) => ValidationIssue[];
   label: string;

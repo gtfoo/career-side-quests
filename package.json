@@ -11,7 +11,8 @@
     "check-routing": "tsx scripts/check-routing.ts",
     "diagnose": "tsx scripts/diagnose-quotes.ts",
     "check-grounding": "tsx scripts/check-grounding.ts",
-    "test": "tsx scripts/test.ts"
+    "test": "tsx scripts/test.ts",
+    "measure": "tsx scripts/measure.ts"
   },
   "keywords": [],
   "author": "",

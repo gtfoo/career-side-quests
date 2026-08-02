@@ -4,6 +4,7 @@ import { openai } from "@ai-sdk/openai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { generateObject, type LanguageModel } from "ai";
 import type { z } from "zod";
+import { ledger } from "./usage";
 
 /**
  * The single place a model is chosen, built on the Vercel AI SDK so swapping
@@ -271,6 +272,9 @@ export async function generate<T>(args: {
   schema: z.ZodType<T>;
   system?: string;
   prompt: string;
+  /** Set when this call is re-running after failed validation, so the ledger
+   *  can separate useful spend from waste. */
+  isRetry?: boolean;
 }): Promise<GenerateResult<T>> {
   const specs = resolveChain(args.stage);
   let lastErr: unknown;
@@ -285,6 +289,15 @@ export async function generate<T>(args: {
         prompt: args.prompt,
         providerOptions: providerOptions(spec, args.stage),
       });
+      // Record before returning, so no successful call can escape accounting.
+      ledger.record({
+        stage: args.stage,
+        modelSpec: spec,
+        inputTokens: res.usage?.inputTokens ?? 0,
+        outputTokens: res.usage?.outputTokens ?? 0,
+        isRetry: args.isRetry ?? false,
+      });
+
       return {
         object: res.object as T,
         modelSpec: spec,
