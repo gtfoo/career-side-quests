@@ -126,13 +126,30 @@ async function main() {
     console.log(
       ` → ${scored.carriesOver}% (${scored.verdict})${flagged ? ` ⚠ ${flagged} flagged` : ""}`,
     );
+
+    // The quotes that could not be grounded, verbatim. Without seeing the text
+    // itself there is no way to tell a hallucination from a validator that is
+    // too strict — and those need opposite fixes.
+    if (process.env.SHOW_ISSUES) {
+      for (const r of results) {
+        for (const i of r.issues) {
+          console.log(
+            `      [${r.match.requirementId}] ${i.path}: ${i.problem}\n        "${i.detail ?? ""}"`,
+          );
+        }
+      }
+    }
   }
 
   console.log("\n────────── stability ──────────");
   const spread = Math.max(...scores) - Math.min(...scores);
-  console.log(`scores    ${scores.join(", ")}`);
-  console.log(`median    ${median(scores)}%`);
-  console.log(`spread    ${spread} points`);
+  console.log(`scores      ${scores.join(", ")}`);
+  console.log(`median      ${median(scores)}%`);
+  console.log(`spread      ${spread} points`);
+  console.log(`reqs        ${target.requirements.length} extracted`);
+  console.log(
+    `unstable    ${[...levels.values()].filter((ls) => new Set(ls).size > 1).length} of ${levels.size} requirements moved`,
+  );
 
   const unstable = [...levels.entries()]
     .map(([id, ls]) => ({ id, ls, range: Math.max(...ls) - Math.min(...ls) }))

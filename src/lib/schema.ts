@@ -61,7 +61,9 @@ export const JobTarget = z.object({
   team: z.string().nullable(),
   locations: z.array(z.string()),
   remote: z.boolean().nullable(),
-  requirements: z.array(Requirement).min(4).max(15),
+  // Bounded so the scoring denominator cannot drift far between runs. The
+  // prompt asks for 8-10; these are the hard rails either side of that.
+  requirements: z.array(Requirement).min(6).max(12),
 });
 export type JobTarget = z.infer<typeof JobTarget>;
 

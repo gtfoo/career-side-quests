@@ -20,6 +20,12 @@ export function normalise(s: string): string {
     .replace(/[“”]/g, '"')
     .replace(/[‐-―−]/g, "-")
     .replace(/[•▪●·]/g, " ")
+    // A STANDALONE dash or bullet is a list marker, and models freely swap one
+    // for another when copying ("Tech ● APIs" quoted as "Tech – APIs"). That is
+    // transcription drift, not a fabricated claim, so both collapse away.
+    // Intra-word hyphens are untouched: "pre-sales" and "cross-border" carry
+    // meaning and still have to match.
+    .replace(/(^|\s)-+(?=\s|$)/g, " ")
     .replace(/ /g, " ")
     .replace(/\s+/g, " ")
     .trim()

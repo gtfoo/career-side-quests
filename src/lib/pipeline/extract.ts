@@ -21,7 +21,15 @@ Rules:
 - Distinguish required from preferred. "Must", "required", years of experience and named languages are usually required; "bonus", "nice to have", "a plus" are not.
 - Weight 1-5 by how much the requirement drives the hiring decision, not how prominently it appears.
 - Mark work authorisation, location and clearance as kind "eligibility". These gate the application; they are not skills.
-- Merge duplicates. Aim for 6-12 distinct requirements.`;
+
+Merging, which decides how many requirements you end up with:
+- Two requirements that the SAME piece of a candidate's experience would satisfy are ONE requirement. Merge them and quote the stronger line.
+- Split only when a candidate could plausibly have one and not the other.
+- Soft qualities stated several ways ("empathy for customers", "enjoys working
+  with customers", "customer-focused") are one requirement, not three.
+- Produce 8 to 10 requirements. Fewer means you have merged things a candidate
+  could hold separately; more means you are listing phrasings rather than
+  requirements.`;
 
 export async function extractJobTarget(snapshot: PostingSnapshot) {
   const known = snapshot.text;

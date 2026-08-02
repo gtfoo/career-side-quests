@@ -59,6 +59,70 @@ type Item = { str: string; x: number; y: number; w: number };
  * "Mandarin Chinese" attached to "Native / Bilingual" instead of stranding them
  * fifteen lines apart.
  */
+/**
+ * Split a page into column bands before anything else.
+ *
+ * Grouping by y alone is wrong on a two-column CV: a wrapped sentence in the
+ * main column absorbs whatever sidebar text happens to share its vertical
+ * position, which splices "MBA" into the middle of a job description. So find
+ * the vertical gutters first — x ranges no glyph anywhere on the page crosses —
+ * and treat each band as its own flow.
+ *
+ * Row grouping then runs INSIDE a band, which is what keeps a sidebar's own
+ * label/value pairs ("Mandarin Chinese" / "Native / Bilingual") together.
+ */
+function splitColumns(items: Item[]): Item[][] {
+  if (items.length < 2) return [items];
+
+  const xs = items.map((i) => i.x);
+  const pageLeft = Math.min(...xs);
+  const pageRight = Math.max(...items.map((i) => i.x + i.w));
+  const width = pageRight - pageLeft;
+  if (width <= 0) return [items];
+
+  // Build the projection from NARROW items only. A single full-width element —
+  // a name header, a rule, a footer — crosses every candidate gutter and would
+  // otherwise hide the column structure of the entire page beneath it.
+  const narrow = items.filter((i) => i.w < width * 0.4);
+  if (narrow.length < 2) return [items];
+
+  // Mark every 2pt slice that any glyph covers.
+  const BIN = 2;
+  const bins = new Uint8Array(Math.ceil(width / BIN) + 1);
+  for (const it of narrow) {
+    const from = Math.floor((it.x - pageLeft) / BIN);
+    const to = Math.ceil((it.x + it.w - pageLeft) / BIN);
+    for (let b = from; b <= to && b < bins.length; b++) bins[b] = 1;
+  }
+
+  // A gutter must be wide enough not to be ordinary word spacing, and must not
+  // be a page margin.
+  const MIN_GUTTER = 18;
+  const cuts: number[] = [];
+  let runStart: number | null = null;
+  for (let b = 0; b < bins.length; b++) {
+    if (!bins[b]) {
+      if (runStart === null) runStart = b;
+    } else {
+      if (runStart !== null && (b - runStart) * BIN >= MIN_GUTTER) {
+        cuts.push(pageLeft + ((runStart + b) / 2) * BIN);
+      }
+      runStart = null;
+    }
+  }
+
+  if (!cuts.length) return [items];
+
+  const bands: Item[][] = Array.from({ length: cuts.length + 1 }, () => []);
+  for (const it of items) {
+    const mid = it.x + it.w / 2;
+    let band = 0;
+    while (band < cuts.length && mid > cuts[band]!) band++;
+    bands[band]!.push(it);
+  }
+  return bands.filter((b) => b.length > 0);
+}
+
 function layoutText(items: Item[]): string {
   if (!items.length) return "";
 
@@ -117,9 +181,20 @@ export async function extractPdf(
           w: (i as unknown as { width?: number }).width ?? 0,
         };
       })
-      .filter((i) => i.str.length > 0);
+      // Whitespace-only runs must go BEFORE column detection. pdfjs emits them
+      // with real geometry, and a padding run that reaches across the gutter
+      // fills it in — so the page looks single-column and the sidebar gets
+      // spliced into the main text. Spacing is reconstructed from coordinates
+      // below anyway, so nothing is lost by dropping them.
+      .filter((i) => i.str.trim().length > 0);
 
-    const text = layoutText(items).trim();
+    // Columns first, then rows within each. Bands are emitted left to right,
+    // which is the reading order of every CV layout in practice.
+    const text = splitColumns(items)
+      .map(layoutText)
+      .filter((t) => t.trim().length > 0)
+      .join("\n\n")
+      .trim();
     pages.push({
       page: n,
       text,

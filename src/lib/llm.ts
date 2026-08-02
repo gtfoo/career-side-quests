@@ -78,11 +78,22 @@ function stageDefault(stage: Stage): string {
     );
   }
   const primary = available[0]!;
-  if (stage === "adversary") {
-    const other = available.find((p) => p !== primary) ?? primary;
-    return PREFERRED[other]!;
-  }
-  return PREFERRED[primary]!;
+
+  // Every stage gets the other providers appended as a fallback chain. A key
+  // that is out of credit or rate-limited should degrade to the next lab, not
+  // end the run: an exhausted primary otherwise takes down a read that two
+  // other configured providers could have finished. This is not hypothetical —
+  // it happened mid-development, and the failure looked like a clean pass
+  // because nothing ran at all.
+  const chain =
+    stage === "adversary"
+      ? [
+          ...available.filter((p) => p !== primary),
+          primary, // last resort: self-critique beats no critique
+        ]
+      : available;
+
+  return chain.map((p) => PREFERRED[p]!).join(",");
 }
 
 /** Effort/thinking is provider-specific, so it lives with the model choice. */
@@ -212,10 +223,35 @@ export function providerStatus(): {
  * rate limit, or the model being unavailable for this key. A genuine bad
  * request (bad schema or prompt) is not retried — it would fail on every model.
  */
+/**
+ * Flatten an error into searchable text.
+ *
+ * The AI SDK wraps a failed call in AI_RetryError whose own message says only
+ * that retries were exhausted; the reason lives further down, in the cause
+ * chain and in the provider's raw responseBody. Reading just `.message` misses
+ * it — which is how an out-of-credit key killed a run that two other
+ * configured providers could have finished.
+ */
+function errorText(err: unknown, depth = 0): string {
+  if (depth > 4 || err == null) return "";
+  if (typeof err === "string") return err;
+  if (typeof err !== "object") return String(err);
+
+  const e = err as Record<string, unknown>;
+  return [
+    typeof e.message === "string" ? e.message : "",
+    typeof e.responseBody === "string" ? e.responseBody : "",
+    typeof e.code === "string" ? e.code : "",
+    typeof e.type === "string" ? e.type : "",
+    errorText(e.cause, depth + 1),
+    errorText(e.lastError, depth + 1),
+    ...(Array.isArray(e.errors) ? e.errors.map((x) => errorText(x, depth + 1)) : []),
+  ].join(" ");
+}
+
 function shouldFallback(err: unknown): boolean {
-  const m = err instanceof Error ? err.message : String(err);
-  return /quota|rate.?limit|429|resource.?exhausted|exhausted|not found|no longer available|404|unavailable|overloaded|529|permission|403/i.test(
-    m,
+  return /quota|rate.?limit|429|resource.?exhausted|exhausted|insufficient|no credits|credit_balance|billing|not found|no longer available|404|unavailable|overloaded|529|permission|403/i.test(
+    errorText(err),
   );
 }
 

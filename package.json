@@ -9,7 +9,8 @@
     "spike": "tsx scripts/spike.ts",
     "try-posting": "tsx scripts/try-posting.ts",
     "check-routing": "tsx scripts/check-routing.ts",
-    "diagnose": "tsx scripts/diagnose-quotes.ts"
+    "diagnose": "tsx scripts/diagnose-quotes.ts",
+    "check-grounding": "tsx scripts/check-grounding.ts"
   },
   "keywords": [],
   "author": "",
