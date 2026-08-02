@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ReadScreen, type ReadResult } from "./ReadScreen";
 
 /**
  * The input screen: what you're aiming at, and what you've got.
@@ -99,6 +100,57 @@ export function StartForm() {
 
   const [links, setLinks] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
+
+  const [reading, setReading] = useState(false);
+  const [readErr, setReadErr] = useState<string | null>(null);
+  const [result, setResult] = useState<ReadResult | null>(null);
+
+  // Dev-only: `?preview=1` renders the read screen from a fixture, so layout
+  // changes can be checked without spending a model call on every tweak.
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (!new URLSearchParams(window.location.search).has("preview")) return;
+    void fetch("/stub-read.json")
+      .then((r) => r.json())
+      .then(setResult)
+      .catch(() => {});
+  }, []);
+
+  async function runRead() {
+    if (!snapshot || !docs.length) return;
+    setReading(true);
+    setReadErr(null);
+    try {
+      // Links the user typed are evidence too, but they are not fetched yet —
+      // pass them as notes so they at least reach the read rather than being
+      // silently dropped.
+      const linkNotes = Object.entries(links)
+        .filter(([, v]) => v.trim())
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\n");
+
+      const res = await fetch("/api/assess", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          snapshot,
+          docs: docs.map((d) => ({ id: d.filename, text: d.text })),
+          notes: [notes, linkNotes].filter(Boolean).join("\n\n"),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) setResult(data.result);
+      else setReadErr(data.message);
+    } catch {
+      setReadErr("The read failed to complete. Try again.");
+    } finally {
+      setReading(false);
+    }
+  }
+
+  if (result) {
+    return <ReadScreen result={result} onReset={() => setResult(null)} />;
+  }
 
   async function resolveTarget() {
     setChecking(true);
@@ -389,19 +441,30 @@ export function StartForm() {
         </section>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          disabled={!ready}
-          className="border border-[var(--color-ink)] bg-[var(--color-ink)] px-6 py-3 font-mono text-xs uppercase tracking-wider text-[var(--color-paper)] hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Read my position
-        </button>
-        <small className="font-mono text-[11px] text-[var(--color-faint)]">
-          {ready
-            ? "About 40 seconds · nothing is kept after the read"
-            : "Add a target and at least one document to continue"}
-        </small>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-4">
+          <button
+            type="button"
+            onClick={runRead}
+            disabled={!ready || reading}
+            className="border border-[var(--color-ink)] bg-[var(--color-ink)] px-6 py-3 font-mono text-xs uppercase tracking-wider text-[var(--color-paper)] hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {reading ? "Reading…" : "Read my position"}
+          </button>
+          <small className="font-mono text-[11px] text-[var(--color-faint)]">
+            {reading
+              ? "Scoring each requirement separately — this takes a minute"
+              : ready
+                ? "About a minute · nothing is kept after the read"
+                : "Add a target and at least one document to continue"}
+          </small>
+        </div>
+
+        {readErr && (
+          <p className="border-l-2 border-[var(--color-block)] bg-[var(--color-block)]/8 p-3 text-sm">
+            {readErr}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -33,18 +33,48 @@ export type Stage =
   | "quest"
   | "quiz";
 
-/** Sensible defaults per stage. Overridden by env; see resolveChain(). */
-const STAGE_DEFAULTS: Record<Stage, string> = {
-  extract_jd: "anthropic:claude-opus-4-8",
-  extract_evidence: "anthropic:claude-opus-4-8",
-  match: "anthropic:claude-opus-4-8",
-  // Deliberately a different lab from `match`. If you point both at the same
-  // model you still get an adversarial pass, but a much weaker one.
-  adversary: "google:gemini-flash-latest",
-  translate: "anthropic:claude-opus-4-8",
-  quest: "anthropic:claude-opus-4-8",
-  quiz: "anthropic:claude-opus-4-8",
+/** Which providers actually have credentials right now. */
+function availableProviders(): string[] {
+  return [
+    process.env.ANTHROPIC_API_KEY ? "anthropic" : null,
+    process.env.OPENAI_API_KEY ? "openai" : null,
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY ? "google" : null,
+  ].filter((p): p is string => Boolean(p));
+}
+
+/** The model we reach for first on each provider, for judgement-heavy work. */
+const PREFERRED: Record<string, string> = {
+  anthropic: "anthropic:claude-opus-4-8",
+  openai: "openai:gpt-5",
+  google: "google:gemini-flash-latest",
 };
+
+/**
+ * Defaults adapt to the keys present, so the app runs with one provider and
+ * gets better with two. Explicit env always wins — see resolveChain().
+ *
+ * The adversarial stage deliberately picks a DIFFERENT provider from the
+ * scoring stage when one is available. With a single key it falls back to the
+ * same model, which still helps but is a weaker check: a model reviewing its
+ * own reasoning shares its own blind spots.
+ */
+function stageDefault(stage: Stage): string {
+  const available = availableProviders();
+  if (!available.length) {
+    // Named so the error says what to do, rather than failing on a missing key
+    // somewhere deep in a provider SDK.
+    throw new Error(
+      "No model provider configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY or " +
+        "GOOGLE_GENERATIVE_AI_API_KEY in .env.local (see .env.example).",
+    );
+  }
+  const primary = available[0]!;
+  if (stage === "adversary") {
+    const other = available.find((p) => p !== primary) ?? primary;
+    return PREFERRED[other]!;
+  }
+  return PREFERRED[primary]!;
+}
 
 /** Effort/thinking is provider-specific, so it lives with the model choice. */
 const STAGE_EFFORT: Record<Stage, "low" | "medium" | "high" | "xhigh"> = {
@@ -91,7 +121,7 @@ export function resolveChain(stage: Stage): string[] {
   const raw =
     process.env[envKey(stage)] ??
     process.env.MODEL_DEFAULT ??
-    STAGE_DEFAULTS[stage];
+    stageDefault(stage);
   const specs = raw
     .split(",")
     .map((s) => s.trim())
