@@ -72,15 +72,20 @@ const TARGET_OPTIONS: {
   },
 ];
 
+/**
+ * Only GitHub is actually fetched. The others are recorded as notes so they
+ * reach the read, but nothing pretends to have visited them — claiming to have
+ * read a portfolio we never opened would be exactly the kind of unearned
+ * confidence this app is built to avoid.
+ */
 const LINK_FIELDS = [
-  { key: "github", label: "GitHub", placeholder: "github.com/you" },
   { key: "portfolio", label: "Portfolio", placeholder: "yoursite.com" },
   {
     key: "linkedin",
     label: "LinkedIn",
     placeholder: "Save your profile as PDF and upload it above",
   },
-  { key: "other", label: "Anything else", placeholder: "A repo, a talk, a paper" },
+  { key: "other", label: "Anything else", placeholder: "A talk, a paper, a product" },
 ] as const;
 
 export function StartForm() {
@@ -100,6 +105,36 @@ export function StartForm() {
 
   const [links, setLinks] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
+
+  const [gh, setGh] = useState("");
+  const [ghBusy, setGhBusy] = useState(false);
+  const [ghErr, setGhErr] = useState<string | null>(null);
+
+  async function readGithub() {
+    if (!gh.trim()) return;
+    setGhBusy(true);
+    setGhErr(null);
+    try {
+      const res = await fetch("/api/github", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle: gh }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // Replace rather than append, so reading the same profile twice does
+        // not double-count it as evidence.
+        setDocs((d) => [...d.filter((x) => x.filename !== data.doc.filename), data.doc]);
+        setGh("");
+      } else {
+        setGhErr(data.message);
+      }
+    } catch {
+      setGhErr("Could not reach GitHub. Try again.");
+    } finally {
+      setGhBusy(false);
+    }
+  }
 
   const [reading, setReading] = useState(false);
   const [readErr, setReadErr] = useState<string | null>(null);
@@ -406,7 +441,42 @@ export function StartForm() {
 
           <div className="flex flex-col gap-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--color-faint)]">
-              Add evidence · optional
+              GitHub · optional, and read properly
+            </span>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={gh}
+                onChange={(e) => setGh(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void readGithub();
+                }}
+                placeholder="github.com/you"
+                className="flex-1 border border-[var(--color-rule)] bg-[var(--color-sunken)] px-2.5 py-1.5 font-mono text-[11px] outline-none focus:border-[var(--color-carry)]"
+              />
+              <button
+                type="button"
+                onClick={readGithub}
+                disabled={ghBusy || !gh.trim()}
+                className="border border-[var(--color-rule)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider hover:border-[var(--color-ink)] disabled:opacity-40"
+              >
+                {ghBusy ? "Reading…" : "Read"}
+              </button>
+            </div>
+            <p className="text-[11px] text-[var(--color-muted)]">
+              Actually fetched: languages, sizes, recency. This is what turns a
+              claimed skill into a shown one — or shows it isn&rsquo;t there.
+            </p>
+            {ghErr && (
+              <p className="border-l-2 border-[var(--color-gap)] bg-[var(--color-gap)]/8 p-2 text-[13px]">
+                {ghErr}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--color-faint)]">
+              Other links · recorded, not visited
             </span>
             {LINK_FIELDS.map((f) => (
               <label key={f.key} className="grid grid-cols-[90px_1fr] items-center gap-2">
