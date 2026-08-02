@@ -14,8 +14,14 @@ set -euo pipefail
 APP="career-side-quests"
 PORT=3002
 HOST="career-side-quests.gtfoo.com"
-REPO="git@github.com:gtfoo/career-side-quests.git"
 DIR="/home/deploy/${APP}"
+
+# HTTPS, not SSH. The sibling apps on this box use per-repo deploy keys with
+# ~/.ssh/config aliases, which is what a PRIVATE repo needs. This one is public
+# and deploys only ever read, so HTTPS avoids minting and registering a key for
+# no gain. Override if the repo is ever made private:
+#     REPO=git@github-side-quests:gtfoo/career-side-quests.git bash provision.sh
+REPO="${REPO:-https://github.com/gtfoo/career-side-quests.git}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run as root: sudo bash provision.sh" >&2
