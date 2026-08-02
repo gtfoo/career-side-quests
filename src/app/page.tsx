@@ -5,7 +5,7 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-[1000px] px-6 pb-24">
       <header className="flex items-center justify-between gap-4 py-5">
-        <span className="font-mono text-xs font-semibold uppercase tracking-[0.3em]">
+        <span className="font-mono text-xs font-semibold uppercase tracking-[0.28em]">
           {PRODUCT.name}
         </span>
         <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--color-faint)]">
