@@ -44,6 +44,26 @@ follow, and both are enforced in code rather than left to the model:
 If a gap genuinely cannot be closed quickly, the product says so. Do not add
 "remediation" for things like years-of-experience or headcount ownership.
 
+## A CV never reaches a provider that trains on input
+
+`STAGE_SEES_USER_DATA` in `src/lib/llm.ts` marks which stages are shown the
+candidate's own material. Those stages may only use providers where
+`mayTrainOnInput()` is false. The filter runs before any cost or quality
+preference, applies to fallback chains, and cannot be overridden by
+`MODEL_*` env vars — whoever sets an env var is not the person whose CV it is.
+
+Google's **free** tier trains on submissions and permits human review; the paid
+tier does not, and nothing in the API response says which you are on. So the
+code assumes free unless `GOOGLE_PAID_TIER=true`. Google is still used for the
+job posting, which is public text — that split is the whole point and is worth
+keeping rather than banning a provider outright.
+
+If every configured provider trains on input, a read **fails** rather than
+proceeding. Running out of paid credit is not a reason to send someone's resume
+somewhere it can be trained on.
+
+Do not weaken this to make a demo work.
+
 ## Never spend tokens without being asked
 
 Model calls are default-deny (`src/lib/spend.ts`). Two switches, both required:

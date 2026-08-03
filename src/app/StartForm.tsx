@@ -454,10 +454,9 @@ export function StartForm() {
               {canStore ? (
                 <>
                   Your CV is read in your browser and kept{" "}
-                  <strong>on this device only</strong>. It is sent to the model
-                  to be scored, and is <strong>not</strong> stored on our
-                  server, and <strong>not</strong> used to train anything.
-                  Clearing your browser data removes it.
+                  <strong>on this device only</strong>
+                  {" — "}not on our server. Clearing your browser data
+                  removes it.
                 </>
               ) : (
                 <>
@@ -466,6 +465,20 @@ export function StartForm() {
                   disappears when you close the tab.
                 </>
               )}
+            </p>
+            {/*
+              Stated separately and specifically. "Not used for training" is a
+              claim about someone else's terms, not ours, so it names whose
+              terms and what they say rather than asserting it flatly. The code
+              enforces this: providers whose terms permit training on input are
+              excluded from every stage that sees a CV (see src/lib/llm.ts).
+            */}
+            <p className="text-[13px] leading-relaxed text-[var(--color-muted)]">
+              To score it, the text is sent to OpenAI or Anthropic, whose API
+              terms say customer input is <strong>not used for training</strong>{" "}
+              by default. Providers that reserve the right to train on input are
+              blocked from seeing your CV in code, not just by policy. The job
+              posting &mdash; public text &mdash; may go elsewhere.
             </p>
           </div>
 

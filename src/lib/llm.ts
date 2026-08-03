@@ -79,18 +79,35 @@ function stageDefault(stage: Stage): string {
         "GOOGLE_GENERATIVE_AI_API_KEY in .env.local (see .env.example).",
     );
   }
-  const primary = available[0]!;
+  // A stage that sees the user's CV may only use providers that do not train
+  // on input. This filter comes FIRST, before any cost or quality preference,
+  // and applies to fallbacks too: running out of paid credit is not a reason to
+  // send someone's resume somewhere it can be trained on and read by humans.
+  // Better to fail the read and say why.
+  const eligible = STAGE_SEES_USER_DATA[stage]
+    ? available.filter((p) => !mayTrainOnInput(p))
+    : available;
+
+  if (!eligible.length) {
+    throw new Error(
+      `No provider available for "${stage}" that is safe for personal data. ` +
+        `Every configured provider reserves the right to train on input. ` +
+        `Add an OpenAI or Anthropic key, or set GOOGLE_PAID_TIER=true if that ` +
+        `key is on Google's paid tier (the free tier trains on submissions and ` +
+        `allows human review).`,
+    );
+  }
+
+  const primary = eligible[0]!;
 
   // Mechanical stages run cheapest-first. Their output is checked against the
   // source verbatim, so a weaker model costs a retry rather than credibility —
   // and these are the stages a free tier can actually absorb.
   if (STAGE_TIER[stage] === "mechanical") {
-    const cheap: string[] = CHEAPEST_FIRST.filter((p) =>
-      available.includes(p),
-    );
+    const cheap: string[] = CHEAPEST_FIRST.filter((p) => eligible.includes(p));
     // Stronger models still follow, so a free tier running out of quota
     // degrades to a paid one instead of ending the read.
-    const rest = available.filter((p) => !cheap.includes(p));
+    const rest = eligible.filter((p) => !cheap.includes(p));
     return [...cheap, ...rest].map((p) => PREFERRED[p]!).join(",");
   }
 
@@ -103,10 +120,10 @@ function stageDefault(stage: Stage): string {
   const chain =
     stage === "adversary"
       ? [
-          ...available.filter((p) => p !== primary),
+          ...eligible.filter((p) => p !== primary),
           primary, // last resort: self-critique beats no critique
         ]
-      : available;
+      : eligible;
 
   return chain.map((p) => PREFERRED[p]!).join(",");
 }
@@ -140,6 +157,40 @@ const STAGE_TIER: Record<Stage, "mechanical" | "judgement"> = {
 
 /** Cheapest first. Used only for mechanical stages. */
 const CHEAPEST_FIRST = ["google", "openai", "anthropic"] as const;
+
+/**
+ * Which stages are shown the CANDIDATE'S OWN material.
+ *
+ * This is a privacy boundary, not a performance one. The job description is a
+ * public posting; a CV is not. Anything true here must never reach a provider
+ * whose terms permit training on input — see mayTrainOnInput().
+ */
+const STAGE_SEES_USER_DATA: Record<Stage, boolean> = {
+  extract_jd: false, // the posting only — public text
+  extract_evidence: true, // the CV itself
+  match: true, // quotes lifted from the CV
+  adversary: true,
+  translate: true,
+  quest: true,
+  quiz: true,
+};
+
+/**
+ * Does this provider reserve the right to train on what we send it?
+ *
+ * Google's free tier does, explicitly: "Google uses the content you submit to
+ * the Services and any generated responses to provide, improve, and develop
+ * Google products", and "human reviewers may read, annotate, and process your
+ * API input and output". The PAID tier does not. Nothing in the API response
+ * reveals which tier a key is on, so the safe assumption is free — set
+ * GOOGLE_PAID_TIER=true to declare otherwise.
+ *
+ * OpenAI and Anthropic both state they do not train on API data by default.
+ */
+function mayTrainOnInput(provider: string): boolean {
+  if (provider !== "google") return false;
+  return process.env.GOOGLE_PAID_TIER !== "true";
+}
 
 /** Effort/thinking is provider-specific, so it lives with the model choice. */
 const STAGE_EFFORT: Record<Stage, "low" | "medium" | "high" | "xhigh"> = {
@@ -194,6 +245,31 @@ export function resolveChain(stage: Stage): string[] {
   if (!specs.length) {
     throw new Error(`No model configured for stage "${stage}".`);
   }
+
+  // An explicit env override must not be able to route personal data somewhere
+  // it can be trained on. Someone setting MODEL_MATCH by hand is choosing a
+  // model, not waiving the user's privacy — and the user is not the one setting
+  // the variable. Drop offenders rather than honouring them.
+  if (STAGE_SEES_USER_DATA[stage]) {
+    const safe = specs.filter(
+      (s) => !mayTrainOnInput(s.slice(0, s.indexOf(":"))),
+    );
+    if (safe.length !== specs.length) {
+      console.warn(
+        `[${stage}] dropped ${specs.length - safe.length} model(s) that may train on input. ` +
+          `This stage handles the candidate's own CV.`,
+      );
+    }
+    if (!safe.length) {
+      throw new Error(
+        `Every model configured for "${stage}" may train on its input, and this ` +
+          `stage handles personal data. Set GOOGLE_PAID_TIER=true if that key is ` +
+          `on the paid tier, or configure an OpenAI/Anthropic model.`,
+      );
+    }
+    return safe;
+  }
+
   return specs;
 }
 

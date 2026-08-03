@@ -30,6 +30,7 @@ import {
   isGrounded,
   normalise,
 } from "../src/lib/pipeline/validate";
+import { resolveChain } from "../src/lib/llm";
 import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
 import * as localStore from "../src/lib/store/local";
 import type { JobTarget, RequirementMatch } from "../src/lib/schema";
@@ -294,6 +295,82 @@ section("spending is default-deny");
   delete process.env.LLM_SPEND;
   requireExplicitApproval(["node", "script"]);
   if (saved !== undefined) process.env.LLM_SPEND = saved;
+}
+
+// ------------------------------------------------- personal data routing
+
+section("a CV never reaches a provider that trains on input");
+
+{
+  const saved = { ...process.env };
+  const reset = () => {
+    for (const k of [
+      "OPENAI_API_KEY",
+      "ANTHROPIC_API_KEY",
+      "GOOGLE_GENERATIVE_AI_API_KEY",
+      "GOOGLE_PAID_TIER",
+      "MODEL_MATCH",
+      "MODEL_DEFAULT",
+    ])
+      delete process.env[k];
+  };
+
+  // Google free tier trains on submissions and permits human review, so it may
+  // serve the public job posting but never the candidate's own material.
+  reset();
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY = "x";
+  process.env.OPENAI_API_KEY = "y";
+  ok(
+    "posting extraction may use the cheap provider",
+    resolveChain("extract_jd")[0]!.startsWith("google:"),
+  );
+  ok(
+    "evidence extraction may not",
+    !resolveChain("extract_evidence").some((s) => s.startsWith("google:")),
+  );
+  ok(
+    "matching may not",
+    !resolveChain("match").some((s) => s.startsWith("google:")),
+  );
+
+  // Running out of paid credit is not a reason to send a CV somewhere unsafe.
+  reset();
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY = "x";
+  let threw = false;
+  try {
+    resolveChain("match");
+  } catch {
+    threw = true;
+  }
+  ok("google-only config refuses to score a CV at all", threw);
+  ok(
+    "but can still read a public posting",
+    resolveChain("extract_jd")[0]!.startsWith("google:"),
+  );
+
+  // The paid tier does not train on input, so declaring it unlocks everything.
+  process.env.GOOGLE_PAID_TIER = "true";
+  ok(
+    "GOOGLE_PAID_TIER=true permits personal data",
+    resolveChain("match")[0]!.startsWith("google:"),
+  );
+
+  // A hand-set override must not be able to waive the user's privacy.
+  reset();
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY = "x";
+  process.env.ANTHROPIC_API_KEY = "z";
+  process.env.MODEL_MATCH = "google:gemini-flash-latest,anthropic:claude-opus-4-8";
+  ok(
+    "an explicit override cannot route a CV to a training provider",
+    !resolveChain("match").some((s) => s.startsWith("google:")),
+  );
+  ok(
+    "and the safe entry survives",
+    resolveChain("match").some((s) => s.startsWith("anthropic:")),
+  );
+
+  reset();
+  Object.assign(process.env, saved);
 }
 
 // ---------------------------------------------------- device-local storage
