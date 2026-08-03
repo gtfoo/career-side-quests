@@ -84,9 +84,12 @@ function Track({ level }: { level: number }) {
 export function ReadScreen({
   result,
   onReset,
+  onForget,
 }: {
   result: ReadResult;
   onReset: () => void;
+  /** Wipe everything held on this device, not just this read. */
+  onForget?: () => void;
 }) {
   const { target, assessment: a } = result;
   const verdict = VERDICT_COPY[a.verdict]!;
@@ -359,13 +362,29 @@ export function ReadScreen({
             are flagged rather than hidden.
           </span>
         )}
-        <button
-          type="button"
-          onClick={onReset}
-          className="mt-2 self-start border border-[var(--color-rule)] px-3 py-1.5 uppercase tracking-wider text-[var(--color-ink)] hover:border-[var(--color-ink)]"
-        >
-          Start over
-        </button>
+        <span>
+          This read is saved in your browser on this device. It is not on our
+          server, and closing the tab will not lose it — clearing your browser
+          data will.
+        </span>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onReset}
+            className="self-start border border-[var(--color-rule)] px-3 py-1.5 uppercase tracking-wider text-[var(--color-ink)] hover:border-[var(--color-ink)]"
+          >
+            Start over
+          </button>
+          {onForget && (
+            <button
+              type="button"
+              onClick={onForget}
+              className="self-start border border-[var(--color-rule)] px-3 py-1.5 uppercase tracking-wider text-[var(--color-ink)] hover:border-[var(--color-block)] hover:text-[var(--color-block)]"
+            >
+              Delete everything on this device
+            </button>
+          )}
+        </div>
       </footer>
     </div>
   );

@@ -31,6 +31,7 @@ import {
   normalise,
 } from "../src/lib/pipeline/validate";
 import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
+import * as localStore from "../src/lib/store/local";
 import type { JobTarget, RequirementMatch } from "../src/lib/schema";
 
 let passed = 0;
@@ -293,6 +294,82 @@ section("spending is default-deny");
   delete process.env.LLM_SPEND;
   requireExplicitApproval(["node", "script"]);
   if (saved !== undefined) process.env.LLM_SPEND = saved;
+}
+
+// ---------------------------------------------------- device-local storage
+
+section("local storage: survives a refresh, fails safe");
+
+{
+  // Node has no localStorage. Stand one up so the real module is exercised
+  // rather than a reimplementation of it.
+  const store = new Map<string, string>();
+  const g = globalThis as Record<string, unknown>;
+  const hadWindow = "window" in g;
+
+  g.window = {
+    localStorage: {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    },
+  };
+
+  ok("storage detected when present", localStore.isAvailable());
+  check("nothing saved yet", localStore.load(), null);
+
+  localStore.save({ url: "https://example.com/job", notes: "built a thing" });
+  const back = localStore.load();
+  check("url round-trips", back?.url, "https://example.com/job");
+  check("notes round-trip", back?.notes, "built a thing");
+  ok("savedAt is stamped", Boolean(back?.savedAt));
+
+  localStore.save({ notes: "edited" });
+  const merged = localStore.load();
+  check("a patch merges rather than replacing", merged?.url, "https://example.com/job");
+  check("and applies the change", merged?.notes, "edited");
+
+  // A shape change must orphan old data, not hydrate a stale object into a
+  // component that no longer understands it.
+  store.set("csq.v1", JSON.stringify({ version: 99, url: "stale" }));
+  check("a foreign version is discarded", localStore.load(), null);
+  ok("and the key is removed", !store.has("csq.v1"));
+
+  localStore.save({ url: "https://example.com/again" });
+  localStore.clear();
+  check("clear really clears", localStore.load(), null);
+
+  // Opening the page must not create an entry, and the save that fires one
+  // tick after a clear must not resurrect one.
+  localStore.save({ url: "", pasted: "", notes: "", docs: [], links: {} });
+  ok("empty state writes no key at all", !store.has("csq.v1"));
+
+  localStore.save({ url: "https://example.com/x" });
+  ok("real content does write", store.has("csq.v1"));
+  localStore.save({ url: "" });
+  ok("emptying the last field removes the key again", !store.has("csq.v1"));
+
+  // Private mode, disabled storage, exceeded quota: none of these may throw.
+  g.window = {
+    localStorage: {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+      removeItem: () => {
+        throw new Error("SecurityError");
+      },
+    },
+  };
+  ok("blocked storage reports unavailable", !localStore.isAvailable());
+  check("load degrades to null", localStore.load(), null);
+  localStore.save({ url: "x" }); // must not throw
+  localStore.clear(); // must not throw
+  ok("save and clear swallow storage failures", true);
+
+  if (!hadWindow) delete g.window;
 }
 
 // --------------------------------------------------------------- pdf layout

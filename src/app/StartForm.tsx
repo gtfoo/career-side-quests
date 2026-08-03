@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import * as local from "@/lib/store/local";
 import { ReadScreen, type ReadResult } from "./ReadScreen";
 
 /**
@@ -140,6 +141,9 @@ export function StartForm() {
   const [readErr, setReadErr] = useState<string | null>(null);
   const [result, setResult] = useState<ReadResult | null>(null);
 
+  const [restored, setRestored] = useState(false);
+  const [canStore, setCanStore] = useState(true);
+
   // Dev-only: `?preview=1` renders the read screen from a fixture, so layout
   // changes can be checked without spending a model call on every tweak.
   useEffect(() => {
@@ -150,6 +154,50 @@ export function StartForm() {
       .then(setResult)
       .catch(() => {});
   }, []);
+
+  // Restore whatever was in progress. Runs once, before the user can type, so
+  // a refresh part-way through a read is recoverable rather than fatal.
+  useEffect(() => {
+    setCanStore(local.isAvailable());
+    const saved = local.load();
+    if (!saved) return;
+    if (saved.mode) setMode(saved.mode as TargetMode);
+    if (saved.url) setUrl(saved.url);
+    if (saved.pasted) setPasted(saved.pasted);
+    if (saved.roleText) setRoleText(saved.roleText);
+    if (saved.snapshot) setSnapshot(saved.snapshot);
+    if (saved.docs?.length) setDocs(saved.docs);
+    if (saved.links) setLinks(saved.links);
+    if (saved.notes) setNotes(saved.notes);
+    if (saved.result) setResult(saved.result as ReadResult);
+    setRestored(true);
+  }, []);
+
+  // Persist on every meaningful change. This is a few KB of JSON; the
+  // alternative is losing an upload to a stray refresh.
+  useEffect(() => {
+    local.save({ mode, url, pasted, roleText, snapshot, docs, links, notes });
+  }, [mode, url, pasted, roleText, snapshot, docs, links, notes]);
+
+  useEffect(() => {
+    if (result) local.save({ result });
+  }, [result]);
+
+  /** Wipe everything held on this device. */
+  function forget() {
+    local.clear();
+    setMode("posting");
+    setUrl("");
+    setPasted("");
+    setRoleText("");
+    setSnapshot(null);
+    setTargetMsg(null);
+    setDocs([]);
+    setLinks({});
+    setNotes("");
+    setResult(null);
+    setRestored(false);
+  }
 
   async function runRead() {
     if (!snapshot || !docs.length) return;
@@ -184,7 +232,16 @@ export function StartForm() {
   }
 
   if (result) {
-    return <ReadScreen result={result} onReset={() => setResult(null)} />;
+    return (
+      <ReadScreen
+        result={result}
+        onReset={() => {
+          setResult(null);
+          local.save({ result: undefined });
+        }}
+        onForget={forget}
+      />
+    );
   }
 
   async function resolveTarget() {
@@ -232,6 +289,21 @@ export function StartForm() {
 
   return (
     <div className="flex flex-col gap-8">
+      {restored && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-2.5">
+          <span className="text-sm">
+            Picked up where you left off &mdash; this was saved on this device.
+          </span>
+          <button
+            type="button"
+            onClick={forget}
+            className="border border-[var(--color-rule)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider hover:border-[var(--color-block)] hover:text-[var(--color-block)]"
+          >
+            Clear it
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 items-start gap-5">
         {/* ------------------------------------------------ where you're headed */}
         <section className="flex flex-col gap-5 border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
@@ -368,6 +440,34 @@ export function StartForm() {
               Anything that shows evidence. A CV alone is fine to start.
             </p>
           </header>
+
+          {/*
+            Stated BEFORE a file can be chosen, not in a policy page nobody
+            opens. The absences are the part worth reading, so they are listed
+            explicitly rather than implied by silence.
+          */}
+          <div className="flex flex-col gap-1.5 border-l-2 border-[var(--color-carry)] bg-[var(--color-carry)]/8 p-3">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--color-carry)]">
+              Before you upload
+            </span>
+            <p className="text-[13px] leading-relaxed">
+              {canStore ? (
+                <>
+                  Your CV is read in your browser and kept{" "}
+                  <strong>on this device only</strong>. It is sent to the model
+                  to be scored, and is <strong>not</strong> stored on our
+                  server, and <strong>not</strong> used to train anything.
+                  Clearing your browser data removes it.
+                </>
+              ) : (
+                <>
+                  Your browser is blocking local storage, so nothing can be
+                  saved here &mdash; your CV is used for this read only and
+                  disappears when you close the tab.
+                </>
+              )}
+            </p>
+          </div>
 
           {docs.map((doc) => (
             <div
