@@ -15,6 +15,13 @@ set -euo pipefail
 # Repo root, regardless of where it's cloned or called from.
 cd "$(dirname "$0")/.."
 
+# This script runs as root over SSH while the checkout is owned by `deploy`,
+# which newer git refuses to read ("detected dubious ownership"). The deploy
+# still works without this, but every git call fails silently — so the closing
+# line reports an empty commit, and a deploy log that cannot tell you what is
+# live is worse than no deploy log.
+git config --global --add safe.directory "$PWD" >/dev/null 2>&1 || true
+
 # Prefer nvm's Node 20 if this host uses nvm; otherwise fall back to the system
 # Node on PATH (the droplet's deploy user has system Node 20, no nvm).
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
