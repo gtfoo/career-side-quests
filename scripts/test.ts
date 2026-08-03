@@ -30,6 +30,7 @@ import {
   isGrounded,
   normalise,
 } from "../src/lib/pipeline/validate";
+import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
 import type { JobTarget, RequirementMatch } from "../src/lib/schema";
 
 let passed = 0;
@@ -259,6 +260,40 @@ const pasted = snapshotFromPaste("Some job description text");
 check("fidelity is honest about itself", pasted.fidelity, "pasted");
 check("no posting id to match on", pasted.postingId, null);
 ok("text preserved", pasted.text.includes("Some job description"));
+
+// -------------------------------------------------------------- spend gate
+
+section("spending is default-deny");
+
+{
+  // Restored afterwards so the rest of the suite is unaffected.
+  const saved = process.env.LLM_SPEND;
+
+  delete process.env.LLM_SPEND;
+  requireExplicitApproval(["node", "script"]);
+  ok("no env, no flag = blocked", !spendAllowed());
+
+  process.env.LLM_SPEND = "allow";
+  requireExplicitApproval(["node", "script"]);
+  ok("standing permission alone does NOT let a script spend", !spendAllowed());
+
+  delete process.env.LLM_SPEND;
+  requireExplicitApproval(["node", "script", "--allow-spend"]);
+  ok("flag alone is not enough either", !spendAllowed());
+
+  process.env.LLM_SPEND = "allow";
+  requireExplicitApproval(["node", "script", "--allow-spend"]);
+  ok("both together allow it", spendAllowed());
+
+  process.env.LLM_SPEND = "yes";
+  requireExplicitApproval(["node", "script", "--allow-spend"]);
+  ok("only the exact value 'allow' counts", !spendAllowed());
+
+  // Leave the process blocked, whatever the suite found.
+  delete process.env.LLM_SPEND;
+  requireExplicitApproval(["node", "script"]);
+  if (saved !== undefined) process.env.LLM_SPEND = saved;
+}
 
 // --------------------------------------------------------------- pdf layout
 

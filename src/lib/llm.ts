@@ -4,6 +4,7 @@ import { openai } from "@ai-sdk/openai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { generateObject, type LanguageModel } from "ai";
 import type { z } from "zod";
+import { assertSpendAllowed } from "./spend";
 import { ledger } from "./usage";
 
 /**
@@ -334,6 +335,11 @@ export async function generate<T>(args: {
    *  can separate useful spend from waste. */
   isRetry?: boolean;
 }): Promise<GenerateResult<T>> {
+  // Before resolving anything, before touching a provider SDK. This is the one
+  // chokepoint every paid call passes through, so the check belongs here rather
+  // than in each caller — a new stage cannot forget it.
+  assertSpendAllowed(args.stage);
+
   const specs = resolveChain(args.stage);
   let lastErr: unknown;
 

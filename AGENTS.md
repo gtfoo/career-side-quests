@@ -44,6 +44,26 @@ follow, and both are enforced in code rather than left to the model:
 If a gap genuinely cannot be closed quickly, the product says so. Do not add
 "remediation" for things like years-of-experience or headcount ownership.
 
+## Never spend tokens without being asked
+
+Model calls are default-deny (`src/lib/spend.ts`). Two switches, both required:
+`LLM_SPEND=allow` in the environment, **and** a typed `--allow-spend` on that
+specific command. A standing permission in `.env.local` lets the app run; it
+must never let a script spend on its own.
+
+Do not add a bypass, do not default it to on, and do not "temporarily" relax it
+while debugging. The gate lives inside `generate()`, so a new *stage* is covered
+automatically — but a new *script* is not. Call `requireExplicitApproval()` at
+the top of any script that can reach a model.
+
+Verify whatever you can without spending. These never call a model:
+
+```
+npm test                 scoring, verdicts, grounding, layout, the gate itself
+npm run check-routing    which model each stage would use
+npm run check-grounding  quote grounder, both directions
+```
+
 ## Model choice is empirical
 
 `src/lib/llm.ts` is provider-agnostic (Vercel AI SDK) on purpose: the adversarial

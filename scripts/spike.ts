@@ -28,6 +28,12 @@ import { aggregate } from "../src/lib/pipeline/aggregate";
 import { extractCandidate, extractJobTarget } from "../src/lib/pipeline/extract";
 import { matchAll } from "../src/lib/pipeline/match";
 import type { RequirementMatch } from "../src/lib/schema";
+import { requireExplicitApproval } from "../src/lib/spend";
+
+// Must run before anything can reach a model. Without --allow-spend this
+// revokes any standing permission inherited from .env.local. The spike is the
+// most expensive script here — it runs a full read N times over.
+requireExplicitApproval();
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);

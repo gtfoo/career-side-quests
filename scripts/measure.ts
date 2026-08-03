@@ -18,7 +18,12 @@ import {
 import { readGithub } from "../src/lib/ingest/github";
 import { extractDocument, type SourceDoc } from "../src/lib/ingest/resume";
 import { runRead } from "../src/lib/pipeline/assess";
+import { requireExplicitApproval } from "../src/lib/spend";
 import { ledger } from "../src/lib/usage";
+
+// Must run before anything can reach a model. Without --allow-spend this
+// revokes any standing permission inherited from .env.local.
+requireExplicitApproval();
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);

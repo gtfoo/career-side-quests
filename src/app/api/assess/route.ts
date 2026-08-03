@@ -45,12 +45,16 @@ export async function POST(request: Request) {
     const message = err instanceof Error ? err.message : String(err);
     // A missing key is the most likely failure on a fresh clone, so say that
     // plainly instead of surfacing a provider SDK's internals.
+    // The spend gate is default-deny, so an unconfigured install lands here
+    // first. Name it rather than surfacing a stack trace.
     // Note the hyphen: providers say "invalid x-api-key", not "invalid api key".
-    const friendly = /api[-_ ]?key|credential|unauthor|authentication|401|403/i.test(
-      message,
-    )
-      ? "That model API key was rejected. Put a real key in .env.local (ANTHROPIC_API_KEY) and restart the dev server — the placeholder won't work."
-      : message;
+    const friendly = /SpendBlocked|Blocked before calling a model/i.test(message)
+      ? "Model calls are switched off. Set LLM_SPEND=allow in .env.local and restart the server."
+      : /credit|quota|insufficient|billing|exhausted/i.test(message)
+        ? "Every configured provider is out of credit or quota. Top one up, or add another provider key."
+        : /api[-_ ]?key|credential|unauthor|authentication|401|403/i.test(message)
+          ? "That model API key was rejected. Put a real key in .env.local and restart the server."
+          : message;
     return NextResponse.json({ ok: false, message: friendly }, { status: 500 });
   }
 }
