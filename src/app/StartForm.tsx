@@ -467,18 +467,63 @@ export function StartForm() {
               )}
             </p>
             {/*
-              Stated separately and specifically. "Not used for training" is a
-              claim about someone else's terms, not ours, so it names whose
-              terms and what they say rather than asserting it flatly. The code
-              enforces this: providers whose terms permit training on input are
-              excluded from every stage that sees a CV (see src/lib/llm.ts).
+              "Not used for training" is a claim about someone ELSE'S terms, so
+              it is framed as our reading of them and linked, rather than
+              asserted flatly. Terms change; a user who can click through can
+              check for themselves and does not have to take our word for it.
+              The restriction is also enforced in code — providers whose terms
+              permit training on input are excluded from every stage that sees a
+              CV (src/lib/llm.ts).
             */}
             <p className="text-[13px] leading-relaxed text-[var(--color-muted)]">
-              To score it, the text is sent to OpenAI or Anthropic, whose API
-              terms say customer input is <strong>not used for training</strong>{" "}
-              by default. Providers that reserve the right to train on input are
-              blocked from seeing your CV in code, not just by policy. The job
-              posting &mdash; public text &mdash; may go elsewhere.
+              To score it, the text goes to OpenAI or Anthropic. As we read
+              their terms today, neither uses API input to train their models by
+              default &mdash; check for yourself:{" "}
+              <a
+                href="https://developers.openai.com/api/docs/guides/your-data"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-dotted underline-offset-2 hover:text-[var(--color-ink)]"
+              >
+                OpenAI
+              </a>
+              ,{" "}
+              <a
+                href="https://privacy.claude.com/en/articles/7996868-is-my-data-used-for-model-training"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-dotted underline-offset-2 hover:text-[var(--color-ink)]"
+              >
+                Anthropic
+              </a>
+              . Providers whose terms allow training on input are blocked from
+              seeing your CV in code, not just by intention. The job posting
+              &mdash; public text &mdash; may go elsewhere, including{" "}
+              <a
+                href="https://ai.google.dev/gemini-api/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-dotted underline-offset-2 hover:text-[var(--color-ink)]"
+              >
+                Google
+              </a>
+              .
+            </p>
+
+            {/*
+              Deliberately separate, and visually distinct: this is advice that
+              holds regardless of what any provider's terms say, and it is the
+              part that protects the user beyond this app. Terms can change,
+              companies get breached, and a CV is a document people paste into
+              a dozen sites without thinking.
+            */}
+            <p className="border-t border-[var(--color-carry)]/25 pt-2 text-[13px] leading-relaxed text-[var(--color-muted)]">
+              Worth saying anyway: treat anything you upload anywhere on the
+              internet as <strong>potentially public</strong>, and share only
+              what you&rsquo;d be comfortable with if it were. In particular,
+              keep your employer&rsquo;s confidential details &mdash; client
+              names under NDA, unreleased products, internal figures &mdash; off
+              your CV entirely. Not just here. Anywhere.
             </p>
           </div>
 
