@@ -45,8 +45,11 @@ if (process.env.AUTH_RESEND_KEY) {
   providers.push(
     Resend({
       apiKey: process.env.AUTH_RESEND_KEY,
-      // Must be on a domain verified in Resend, or delivery fails.
-      from: process.env.AUTH_EMAIL_FROM ?? "login@career-side-quests.gtfoo.com",
+      // Must be on a domain VERIFIED in Resend. A subdomain is a separate
+      // domain there and needs its own DNS records — sending from
+      // login@career-side-quests.gtfoo.com while only gtfoo.com is verified
+      // fails, and the symptom is simply that no email ever arrives.
+      from: process.env.AUTH_EMAIL_FROM ?? "login@gtfoo.com",
       name: `${PRODUCT.name} sign-in link`,
       // Short-lived: a link that works for a day is a link that works for
       // whoever reads the inbox tomorrow.
