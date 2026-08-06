@@ -51,19 +51,49 @@ function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
+/** Ashby posting ids are UUIDs, and they appear in the path on hosted boards. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const ashby: BoardAdapter = {
   name: "ashby",
   matches: (url) =>
-    url.hostname.includes("ashbyhq.com") || url.searchParams.has("ashby_jid"),
+    url.hostname.includes("ashbyhq.com") ||
+    url.searchParams.has("ashby_jid") ||
+    // A company-hosted board with the query string stripped — which is what
+    // people paste, because they copy the link from the address bar after it
+    // has been cleaned up. A UUID path segment is the only remaining signal.
+    // Guessing wrong costs one 404 and a fall back to pasting; refusing costs
+    // the user the feature. This adapter is tried LAST for that reason.
+    url.pathname.split("/").some((p) => UUID.test(p)),
   parse: (url) => {
     const jid = url.searchParams.get("ashby_jid");
     const parts = url.pathname.split("/").filter(Boolean);
+
+    // jobs.ashbyhq.com/<org>/<id> — the org is in the path.
     if (url.hostname.includes("ashbyhq.com")) {
-      // jobs.ashbyhq.com/<org>/<id>
       const [org, id] = parts;
       return org ? { org, id: jid ?? id ?? null } : null;
     }
-    return null;
+
+    // A company-hosted board: elevenlabs.io/careers/<id>/<slug>?ashby_jid=<id>.
+    // The org slug is not in the URL at all — the company's own domain IS the
+    // board — so it has to be inferred from the hostname. This is a guess, but
+    // a cheap one to check: a wrong slug simply 404s the board API, and the
+    // caller falls back to pasting. Refusing outright, which is what this did
+    // before, is strictly worse than trying.
+    const host = url.hostname.replace(/^www\./, "");
+    const labels = host.split(".");
+    // Drop the TLD, and a second level for things like .co.uk / .com.sg.
+    const org =
+      labels.length > 2 && labels[labels.length - 2]!.length <= 3
+        ? labels[labels.length - 3]
+        : labels[labels.length - 2];
+
+    // The id may be in the query string or as a path segment after /careers/.
+    const pathId = parts.find((p) => UUID.test(p));
+    const id = jid ?? pathId ?? null;
+
+    return org && id ? { org, id } : null;
   },
   boardUrl: (org) =>
     `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(org)}?includeCompensation=true`,
@@ -160,7 +190,25 @@ const lever: BoardAdapter = {
     }),
 };
 
-const ADAPTERS = [ashby, greenhouse, lever];
+/**
+ * Order matters. Greenhouse and Lever identify themselves by hostname, so they
+ * are unambiguous and go first. Ashby is last because its company-hosted case
+ * has to match on a URL shape rather than a hostname, and a looser matcher
+ * must never get first refusal on a URL another adapter can identify exactly.
+ */
+const ADAPTERS = [greenhouse, lever, ashby];
+
+/** Which board a URL belongs to, or null. Exposed for tests. */
+export function boardFor(url: URL): string | null {
+  return ADAPTERS.find((a) => a.matches(url))?.name ?? null;
+}
+
+/** The org and posting id a URL resolves to, or null. Exposed for tests. */
+export function parseBoardUrl(
+  url: URL,
+): { org: string; id: string | null } | null {
+  return ADAPTERS.find((a) => a.matches(url))?.parse(url) ?? null;
+}
 
 function decodeEntities(s: string): string {
   return s

@@ -19,7 +19,11 @@ import { basename, join } from "node:path";
 
 import { extractDocument } from "../src/lib/ingest/resume";
 import { parseGithubHandle } from "../src/lib/ingest/github";
-import { snapshotFromPaste } from "../src/lib/ingest/posting";
+import {
+  boardFor,
+  parseBoardUrl,
+  snapshotFromPaste,
+} from "../src/lib/ingest/posting";
 import {
   aggregate,
   decisiveRequirements,
@@ -261,6 +265,51 @@ check("empty rejected", parseGithubHandle("   "), null);
 // ----------------------------------------------------------------- postings
 
 section("pasted text is the path that must never break");
+
+// A company-hosted board puts the org in the DOMAIN, not the path, and users
+// paste whichever form the address bar gave them. All of these are the same
+// posting, and refusing any of them means refusing the feature.
+{
+  const cases: [string, string][] = [
+    [
+      "ashby's own host",
+      "https://jobs.ashbyhq.com/elevenlabs/85b7489f-5b0c-4f21-9c1c-7b76ed904c44",
+    ],
+    [
+      "company-hosted, with ashby_jid",
+      "https://elevenlabs.io/careers/85b7489f-5b0c-4f21-9c1c-7b76ed904c44/enterprise-solutions-engineer-singapore?ashby_jid=85b7489f-5b0c-4f21-9c1c-7b76ed904c44",
+    ],
+    [
+      "company-hosted, query string stripped",
+      "https://elevenlabs.io/careers/85b7489f-5b0c-4f21-9c1c-7b76ed904c44/enterprise-solutions-engineer-singapore",
+    ],
+    [
+      "company-hosted, with www",
+      "https://www.elevenlabs.io/careers/85b7489f-5b0c-4f21-9c1c-7b76ed904c44/x",
+    ],
+  ];
+  for (const [label, u] of cases) {
+    const p = parseBoardUrl(new URL(u));
+    ok(
+      `${label} → org+id`,
+      p?.org === "elevenlabs" && Boolean(p?.id?.startsWith("85b7489f")),
+    );
+  }
+
+  // A looser matcher must never steal a URL another adapter identifies exactly.
+  ok(
+    "greenhouse keeps its own urls",
+    boardFor(new URL("https://boards.greenhouse.io/acme/jobs/123")) === "greenhouse",
+  );
+  ok(
+    "lever keeps its own urls",
+    boardFor(new URL("https://jobs.lever.co/acme/abc-def")) === "lever",
+  );
+  ok(
+    "a plain url matches nothing",
+    boardFor(new URL("https://example.com/about")) === null,
+  );
+}
 
 const pasted = snapshotFromPaste("Some job description text");
 check("fidelity is honest about itself", pasted.fidelity, "pasted");
