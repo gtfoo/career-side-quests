@@ -12,8 +12,10 @@
  * `npm run spike` is for. Keeping the two separate matters: a green suite here
  * means the machinery is sound, not that the assessment is good.
  */
+import { rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 
 import { extractDocument } from "../src/lib/ingest/resume";
 import { parseGithubHandle } from "../src/lib/ingest/github";
@@ -31,7 +33,9 @@ import {
   normalise,
 } from "../src/lib/pipeline/validate";
 import { resolveChain } from "../src/lib/llm";
+import * as ratelimit from "../src/lib/ratelimit";
 import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
+import * as db from "../src/lib/store/db";
 import * as localStore from "../src/lib/store/local";
 import type { JobTarget, RequirementMatch } from "../src/lib/schema";
 
@@ -295,6 +299,119 @@ section("spending is default-deny");
   delete process.env.LLM_SPEND;
   requireExplicitApproval(["node", "script"]);
   if (saved !== undefined) process.env.LLM_SPEND = saved;
+}
+
+// ------------------------------------------------------------ persistence
+
+section("saved reads belong to exactly one account");
+
+{
+  const tmp = join(tmpdir(), `csq-test-${Date.now()}.db`);
+  db._resetForTests(tmp);
+
+  const conn = db.getDb();
+  // Guard against the failure this suite already had once: if the path is not
+  // honoured, these tests silently mutate the real development database.
+  ok("tests use a scratch database, not data/app.db", conn.name === tmp);
+  const mkUser = (id: string, email: string) =>
+    conn
+      .prepare(
+        `INSERT INTO users (id, email, name, image, created_at, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, email, null, null, new Date().toISOString(), new Date().toISOString());
+
+  mkUser("alice", "alice@example.com");
+  mkUser("bob", "bob@example.com");
+
+  const aliceRead = db.saveRead({
+    userId: "alice",
+    title: "Solutions Engineer",
+    verdict: "stretch",
+    carriesOver: 72,
+    target: { title: "SE" },
+    assessment: { verdict: "stretch" },
+  });
+
+  check("owner sees their read", db.listReads("alice").length, 1);
+  check("other accounts see nothing", db.listReads("bob").length, 0);
+  ok("owner can fetch it", Boolean(db.getRead("alice", aliceRead)));
+
+  // The one that matters. A leaked or guessed id must not be enough.
+  check(
+    "a known read id is useless to another account",
+    db.getRead("bob", aliceRead),
+    undefined,
+  );
+  check("and cannot be deleted by them", db.deleteRead("bob", aliceRead), 0);
+  ok("so it is still there", Boolean(db.getRead("alice", aliceRead)));
+
+  check("the owner can delete it", db.deleteRead("alice", aliceRead), 1);
+  check("and then it is gone", db.listReads("alice").length, 0);
+
+  // Retention: an expired read is invisible even to its owner.
+  const old = db.saveRead({
+    userId: "alice",
+    title: "Old",
+    verdict: "lock",
+    carriesOver: 90,
+    target: {},
+    assessment: {},
+  });
+  conn
+    .prepare(`UPDATE reads SET expires_at = ? WHERE id = ?`)
+    .run(new Date(Date.now() - 1000).toISOString(), old);
+  check("expired reads are not listed", db.listReads("alice").length, 0);
+  check("nor fetchable", db.getRead("alice", old), undefined);
+  check("and the sweep removes them", db.purgeExpired(), 1);
+
+  // Deleting an account takes its data with it.
+  db.saveRead({
+    userId: "bob",
+    title: "Bob's",
+    verdict: "lock",
+    carriesOver: 80,
+    target: {},
+    assessment: {},
+  });
+  db.deleteAccount("bob");
+  check("account deletion cascades to reads", db.listReads("bob").length, 0);
+
+  conn.close();
+  rmSync(tmp, { force: true });
+  rmSync(`${tmp}-wal`, { force: true });
+  rmSync(`${tmp}-shm`, { force: true });
+}
+
+section("rate limits protect the expensive and the sendable");
+
+{
+  ratelimit._clear();
+  const req = (ip: string) =>
+    new Request("https://x/api/assess", { headers: { "x-forwarded-for": ip } });
+
+  const key = ratelimit.clientKey(req("1.2.3.4"), "assess");
+  let last = { ok: true, remaining: 0, retryAfterSeconds: 0 };
+  for (let i = 0; i < ratelimit.LIMITS.assess.limit; i++) {
+    last = ratelimit.check(key, ratelimit.LIMITS.assess);
+  }
+  ok("calls up to the limit are allowed", last.ok);
+  const over = ratelimit.check(key, ratelimit.LIMITS.assess);
+  ok("the next one is refused", !over.ok);
+  ok("and says when to retry", over.retryAfterSeconds > 0);
+
+  const other = ratelimit.clientKey(req("5.6.7.8"), "assess");
+  ok(
+    "a different caller is unaffected",
+    ratelimit.check(other, ratelimit.LIMITS.assess).ok,
+  );
+
+  ok(
+    "scopes are independent",
+    ratelimit.check(ratelimit.clientKey(req("1.2.3.4"), "signin"), ratelimit.LIMITS.signin)
+      .ok,
+  );
+  ratelimit._clear();
 }
 
 // ------------------------------------------------- personal data routing

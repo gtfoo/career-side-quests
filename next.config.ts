@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
   // Emits a self-contained server bundle in .next/standalone, so the droplet
   // only needs Node — no npm install of the full dependency tree on the box.
   output: "standalone",
+  // better-sqlite3 is a native (.node) addon — it must not be bundled, or the
+  // build fails trying to parse the binary. Standalone output traces it in.
+  serverExternalPackages: ["better-sqlite3"],
 };
 
 export default nextConfig;

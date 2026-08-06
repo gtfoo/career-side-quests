@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { LIMITS, check, clientKey, tooMany } from "@/lib/ratelimit";
 import { snapshotFromPaste, type PostingSnapshot } from "@/lib/ingest/posting";
 import { fromPlainText } from "@/lib/ingest/resume";
 import { runRead } from "@/lib/pipeline/assess";
@@ -13,6 +14,11 @@ import { runRead } from "@/lib/pipeline/assess";
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
+  // This endpoint costs roughly $0.50 of model tokens per call, on a public URL
+  // with no login. Limit before parsing the body, let alone before spending.
+  const rate = check(clientKey(request, "assess"), LIMITS.assess);
+  if (!rate.ok) return tooMany(rate, "reads");
+
   const body = (await request.json()) as {
     snapshot?: PostingSnapshot;
     docs?: { id: string; text: string }[];
