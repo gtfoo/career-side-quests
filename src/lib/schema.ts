@@ -182,6 +182,11 @@ export const Gap = z.object({
 });
 export type Gap = z.infer<typeof Gap>;
 
+/** Every requirement scored in one call. See MATCH_STRATEGY in match.ts. */
+export const RequirementMatchBatch = z.object({
+  matches: z.array(RequirementMatch).min(1),
+});
+
 // ---------------------------------------------------------- the side quest
 
 /**

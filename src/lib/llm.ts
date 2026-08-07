@@ -329,6 +329,13 @@ function maxOutputTokens(stage: Stage): number {
   // tokens reasoning against an 8,000 ceiling, leaving 960 for a large object,
   // which truncated into a schema error. The symptom is never "ran out of
   // room"; it is always "response did not match schema".
+  // Batch matching puts every requirement in one response, so the ceiling must
+  // cover a whole read's worth of judgements plus the reasoning behind them.
+  // Sized generously on purpose: the first thing a squeezed budget drops is
+  // counter-evidence, and losing that makes scores generous without anything
+  // visibly failing.
+  if (stage === "match" && process.env.MATCH_STRATEGY === "batch") return 32000;
+
   switch (STAGE_EFFORT[stage]) {
     case "xhigh":
       return 32000;

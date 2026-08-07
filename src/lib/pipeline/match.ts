@@ -1,6 +1,7 @@
 import { generate } from "@/lib/llm";
 import {
   RequirementMatch,
+  RequirementMatchBatch,
   type CandidateProfile,
   type JobTarget,
   type Requirement,
@@ -211,6 +212,121 @@ async function pooled<T, R>(
   return results;
 }
 
+/**
+ * Score every requirement in ONE call instead of one call each.
+ *
+ * Cheaper, and the saving is in output rather than input: eight separate
+ * reasoning passes over the same evidence collapse into one. Input was already
+ * close to a wash once the shared prefix became cacheable.
+ *
+ * What it risks, and why this is a switch rather than a replacement:
+ *
+ *  - Halo. Seeing every requirement at once invites calibrating them against
+ *    each other, so levels drift toward one overall impression of the person.
+ *  - Position. Requirement 8 gets less attention than requirement 1.
+ *  - Output pressure. Eight judgements share one output ceiling, and the first
+ *    thing squeezed is counter-evidence — which is the anti-flattery mechanism.
+ *    Nothing visibly breaks; the scores just get generous.
+ *
+ * Which effect dominates is an empirical question, so `npm run spike` decides
+ * it. Compare spread, per-requirement stability and cost across both.
+ */
+async function matchBatch(args: {
+  target: JobTarget;
+  profile: CandidateProfile;
+  candidateSource: string;
+  requirements: Requirement[];
+}) {
+  const { target, profile, candidateSource, requirements } = args;
+  const knownIds = new Set(profile.atoms.map((a) => a.id));
+
+  const sharedContext = [
+    MATCH_SYSTEM,
+    "",
+    "You are scoring SEVERAL requirements in one pass. Judge each one on its",
+    "own evidence. Do NOT let a strong showing on one requirement lift another,",
+    "and do not spread levels to look balanced — it is normal and correct for a",
+    "candidate to be a 3 on most and a 0 on one.",
+    "",
+    `Role: ${target.title}${target.company ? ` at ${target.company}` : ""}`,
+    "",
+    "Candidate evidence:",
+    renderEvidence(profile),
+  ].join("\n");
+
+  const { value, issues } = await withValidation({
+    label: "match:batch",
+    attempt: async (feedback) =>
+      generate({
+        stage: "match",
+        schema: RequirementMatchBatch,
+        system: sharedContext,
+        isRetry: Boolean(feedback),
+        prompt: [
+          "Score each of these requirements. Return one entry per requirement,",
+          "with its requirementId echoed exactly.",
+          "",
+          ...requirements.map(
+            (r) =>
+              `${r.id} (${r.kind}, ${r.mustHave ? "required" : "preferred"}): ${r.text}\n   posting says: "${r.quote}"`,
+          ),
+          feedback,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      }),
+    validate: (res) => {
+      const got = new Set(res.object.matches.map((m) => m.requirementId));
+      const missing = requirements.filter((r) => !got.has(r.id));
+      return [
+        // A batch can silently drop a requirement, which a per-call run cannot.
+        ...missing.map((r) => ({
+          path: `requirement ${r.id}`,
+          problem: "missing from the batch",
+        })),
+        ...res.object.matches.flatMap((m) => [
+          ...checkIds(
+            m.supporting.map((s) => ({
+              path: `${m.requirementId} supporting ${s.atomId}`,
+              id: s.atomId,
+            })),
+            knownIds,
+          ),
+          ...checkQuotes(
+            [
+              ...m.supporting.map((s) => ({
+                path: `${m.requirementId} supporting ${s.atomId}`,
+                quote: s.quote,
+              })),
+              ...m.counter.map((c, i) => ({
+                path: `${m.requirementId} counter ${i}`,
+                quote: c.quote,
+              })),
+            ],
+            candidateSource,
+          ),
+        ]),
+      ];
+    },
+  });
+
+  const byId = new Map(value.object.matches.map((m) => [m.requirementId, m]));
+  return requirements.map((r) => ({
+    // A dropped requirement scores 0 rather than vanishing: a missing row would
+    // silently shrink the denominator and inflate the percentage.
+    match: byId.get(r.id) ?? {
+      requirementId: r.id,
+      level: 0 as const,
+      supporting: [],
+      counter: [],
+      reasoning: "This requirement was not scored. Treating it as unevidenced.",
+      confidence: "low" as const,
+    },
+    modelSpec: value.modelSpec,
+    issues: byId.has(r.id) ? issues : [],
+  }));
+}
+
 export async function matchAll(args: {
   target: JobTarget;
   profile: CandidateProfile;
@@ -220,6 +336,13 @@ export async function matchAll(args: {
     (r) => r.kind !== "eligibility",
   );
   if (!scored.length) return [];
+
+  // Default stays one-per-requirement until the eval set says otherwise. The
+  // batch alternative is cheaper; whether it is as honest is measurable, not
+  // arguable. MATCH_STRATEGY=batch to compare.
+  if (process.env.MATCH_STRATEGY === "batch") {
+    return matchBatch({ ...args, requirements: scored });
+  }
 
   // The first call runs alone so it can write the shared prompt-cache prefix;
   // the rest then read it instead of each paying to rewrite it.
