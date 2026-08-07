@@ -77,7 +77,7 @@ function checkEligibility(target: JobTarget, workAuth: string[]) {
  * gap that needs years cannot be shortcut at all — saying so is what makes the
  * rest of the list credible.
  */
-function deriveGaps(
+export function deriveGaps(
   target: JobTarget,
   matches: RequirementMatch[],
 ): Gap[] {
@@ -97,8 +97,16 @@ function deriveGaps(
       let kind: Gap["kind"];
       let effortHours: number | null;
 
-      if (req.kind === "seniority" || req.kind === "credential") {
-        // Years, tenure and formal credentials do not yield to a weekend.
+      // Attributes, not skills. Years of experience, a degree, a certification
+      // and a language are all things no weekend project produces — and a
+      // brief that pretends otherwise is worse than no brief. This is a second
+      // guard on purpose: even when scoring gets a level wrong, nothing here
+      // should propose building your way to being bilingual.
+      if (
+        req.kind === "seniority" ||
+        req.kind === "credential" ||
+        req.kind === "language"
+      ) {
         kind = "cannot_shortcut";
         effortHours = null;
       } else if (level === 2) {

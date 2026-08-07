@@ -51,6 +51,26 @@ evidence exists, not on how impressive it sounds.
    the requirement directly?
    -> level 3
 
+## When a statement IS the evidence
+
+The steps above assume an artifact is possible. For some requirements it is not,
+and applying them blindly produces nonsense — scoring a native speaker 1/3 on a
+language because a CV languages table is "a skills-list entry".
+
+Where the requirement is an ATTRIBUTE rather than a skill — a language, a
+degree, a certification, citizenship or work authorisation — a clear, specific
+statement by the candidate IS the evidence, and there is nothing further to
+demand:
+
+  "Mandarin Chinese — Native / Bilingual"     -> level 3
+  "Bachelor of Computing, NUS"                -> level 3
+  "Singapore Citizen"                         -> level 3
+  "some Spanish"                              -> level 1, because it is vague
+
+Judge these on how specific and unambiguous the claim is, not on whether an
+artifact is attached. A stated proficiency level is specific. "Familiar with"
+is not.
+
 Three tie-breakers, because these are where this judgement drifts between runs:
 - Take the STRONGEST single piece of evidence, not the average of it.
 - If the requirement names a specific technology, tool or language, the evidence

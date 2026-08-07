@@ -41,6 +41,7 @@ import * as ratelimit from "../src/lib/ratelimit";
 import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
 import * as db from "../src/lib/store/db";
 import * as localStore from "../src/lib/store/local";
+import { deriveGaps } from "../src/lib/pipeline/assess";
 import { checkBrief } from "../src/lib/pipeline/quest";
 import type {
   JobTarget,
@@ -211,6 +212,39 @@ check(
 );
 
 // -------------------------------------------------------------- aggregation
+
+section("attributes are never handed a weekend project");
+
+{
+  // A real run proposed recording bilingual demo videos to prove a language the
+  // candidate is native in. Scoring was the root cause, but routing is the
+  // second line of defence: no level, however wrong, should produce a build for
+  // something a build cannot deliver.
+  const t = target([
+    req("R1", { kind: "language", text: "Mandarin and English" }),
+    req("R2", { kind: "credential", text: "PMP certification" }),
+    req("R3", { kind: "seniority", text: "8+ years" }),
+    req("R4", { kind: "hard_skill", text: "Python" }),
+  ]);
+  const gaps = deriveGaps(t, [
+    match("R1", 0),
+    match("R2", 0),
+    match("R3", 0),
+    match("R4", 0),
+  ]);
+  const kindOf = (id: string) => gaps.find((g) => g.requirementId === id)?.kind;
+
+  check("a language gap cannot be shortcut", kindOf("R1"), "cannot_shortcut");
+  check("nor a credential", kindOf("R2"), "cannot_shortcut");
+  check("nor years of experience", kindOf("R3"), "cannot_shortcut");
+  check("but a hard skill can be built", kindOf("R4"), "project");
+  ok(
+    "and no effort estimate is offered for the unfixable",
+    gaps
+      .filter((g) => g.kind === "cannot_shortcut")
+      .every((g) => g.effortHours === null),
+  );
+}
 
 section("aggregate ties it together");
 

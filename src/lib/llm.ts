@@ -323,7 +323,20 @@ function providerOptions(
  * truncate it — which surfaces as a schema error, not as "ran out of room".
  */
 function maxOutputTokens(stage: Stage): number {
-  return STAGE_TIER[stage] === "mechanical" ? 16000 : 8000;
+  // Reasoning is billed from the SAME allowance as the answer, so the ceiling
+  // has to cover BOTH — and the highest-effort stage needs the most room for
+  // each. Observed on a real run: the quest stage at xhigh effort spent 7,040
+  // tokens reasoning against an 8,000 ceiling, leaving 960 for a large object,
+  // which truncated into a schema error. The symptom is never "ran out of
+  // room"; it is always "response did not match schema".
+  switch (STAGE_EFFORT[stage]) {
+    case "xhigh":
+      return 32000;
+    case "high":
+      return 16000;
+    default:
+      return STAGE_TIER[stage] === "mechanical" ? 16000 : 12000;
+  }
 }
 
 /** Whether a stage has credentials, so the UI only offers what will work. */
