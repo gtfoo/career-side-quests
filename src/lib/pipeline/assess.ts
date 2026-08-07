@@ -1,6 +1,12 @@
 import type { PostingSnapshot } from "@/lib/ingest/posting";
 import type { SourceDoc } from "@/lib/ingest/resume";
-import type { Assessment, Gap, JobTarget, RequirementMatch } from "@/lib/schema";
+import type {
+  Assessment,
+  CandidateProfile,
+  Gap,
+  JobTarget,
+  RequirementMatch,
+} from "@/lib/schema";
 import { aggregate } from "./aggregate";
 import { extractCandidate, extractJobTarget } from "./extract";
 import { matchAll } from "./match";
@@ -23,6 +29,14 @@ export type ReadResult = {
   flags: { stage: string; problem: string }[];
   fidelity: PostingSnapshot["fidelity"];
   capturedAt: string;
+  /**
+   * Carried through so a side quest can be built later without re-running
+   * extraction, and so its quotes are checked against the same sources this
+   * read was scored against.
+   */
+  profile: CandidateProfile;
+  candidateText: string;
+  jdText: string;
 };
 
 /**
@@ -188,5 +202,8 @@ export async function runRead(args: {
     flags,
     fidelity: snapshot.fidelity,
     capturedAt: snapshot.capturedAt,
+    profile: ev.profile,
+    candidateText: candidateSource,
+    jdText: snapshot.text,
   };
 }

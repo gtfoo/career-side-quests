@@ -182,6 +182,81 @@ export const Gap = z.object({
 });
 export type Gap = z.infer<typeof Gap>;
 
+// ---------------------------------------------------------- the side quest
+
+/**
+ * One scoped build that closes one gap.
+ *
+ * The schema is strict on purpose. A free-text brief cannot be checked, and
+ * an unchecked brief is where this feature quietly turns into "build a todo
+ * app" — generic, ungrounded, and useless. Every field below either cites
+ * something real or is arithmetic a validator can verify (pipeline/quest.ts).
+ */
+export const Milestone = z.object({
+  id: z.string(),
+  title: z.string(),
+  hours: z.number().min(0.5).max(20),
+  /** Binary and self-checkable. "Works well" is not an acceptance criterion. */
+  acceptance: z.array(z.string()).min(1).max(3),
+  /**
+   * True for the minimum shippable set. This is what stops a "weekend project"
+   * quietly becoming sixty hours — everything before the cut line must sum to
+   * no more than 60% of the budget.
+   */
+  beforeCutLine: z.boolean(),
+});
+export type Milestone = z.infer<typeof Milestone>;
+
+export const ProjectBrief = z.object({
+  title: z.string(),
+  /** Why this build, in terms of what it moves. */
+  proves: z
+    .array(
+      z.object({
+        requirementId: z.string(),
+        jdQuote: z.string().describe("Verbatim span from the job description"),
+        from: Level,
+        to: Level,
+      }),
+    )
+    .min(1)
+    .max(3),
+  /** Grounded in their own material, so the brief is theirs and not generic. */
+  youAlreadyHave: z
+    .array(
+      z.object({
+        what: z.string(),
+        evidenceQuote: z
+          .string()
+          .describe("Verbatim span from the candidate's material"),
+      }),
+    )
+    .max(4),
+  /** Max two. More than two new things is a course, not a project. */
+  theStretch: z.array(z.string()).min(1).max(2),
+  timeBudget: z.object({
+    totalHours: z.number().min(2).max(40),
+    sessions: z.number().min(1).max(6),
+  }),
+  milestones: z.array(Milestone).min(2).max(6),
+  proofArtifacts: z
+    .array(z.enum(["repo", "readme", "deployed-url", "demo-video", "design-doc", "written-case"]))
+    .min(1),
+  /**
+   * Metrics MUST be {{placeholders}}. The app does not know what the candidate
+   * achieved, and inventing a number for someone's CV is the fastest way to
+   * make them lie in an interview.
+   */
+  resumeBullets: z.array(z.string()).min(1).max(3),
+  talkTrack: z.object({
+    pitch: z.string(),
+    likelyFollowUps: z.array(z.string()).min(1).max(3),
+  }),
+  /** What this does NOT demonstrate. Stated, not implied. */
+  honestLimits: z.string(),
+});
+export type ProjectBrief = z.infer<typeof ProjectBrief>;
+
 export const Assessment = z.object({
   distance: Distance,
   verdict: Verdict,

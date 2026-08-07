@@ -1,6 +1,16 @@
 "use client";
 
-import type { Assessment, JobTarget, Requirement } from "@/lib/schema";
+import { useState } from "react";
+import type {
+  Assessment,
+  CandidateProfile,
+  Gap,
+  JobTarget,
+  ProjectBrief,
+  Requirement,
+} from "@/lib/schema";
+import * as local from "@/lib/store/local";
+import { QuestCard } from "./QuestCard";
 
 /**
  * The read.
@@ -22,6 +32,10 @@ export type ReadResult = {
   flags: { stage: string; problem: string }[];
   fidelity: string;
   capturedAt: string;
+  /** Carried through so a side quest can be generated from the same evidence. */
+  profile?: CandidateProfile;
+  candidateText?: string;
+  jdText?: string;
 };
 
 const VERDICT_COPY: Record<string, { word: string; sub: string; tone: string }> = {
@@ -94,6 +108,53 @@ export function ReadScreen({
   const { target, assessment: a } = result;
   const verdict = VERDICT_COPY[a.verdict]!;
   const byId = new Map(target.requirements.map((r) => [r.id, r]));
+
+  const [briefs, setBriefs] = useState<Record<string, ProjectBrief>>({});
+  const [building, setBuilding] = useState<string | null>(null);
+  const [questErr, setQuestErr] = useState<string | null>(null);
+  const [done, setDone] = useState<Set<string>>(
+    () => new Set(local.load()?.progress ?? []),
+  );
+
+  function toggleMilestone(id: string) {
+    setDone((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      // Persisted immediately: ticking a box is the one bit of state a user
+      // creates over days rather than minutes.
+      local.save({ progress: [...next] });
+      return next;
+    });
+  }
+
+  /** Generated on demand — most gaps are never opened, and this is the most
+   *  expensive stage in the pipeline. */
+  async function buildQuest(gap: Gap) {
+    setBuilding(gap.requirementId);
+    setQuestErr(null);
+    try {
+      const res = await fetch("/api/quest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          gap,
+          target,
+          profile: result.profile,
+          matches: a.matches,
+          candidateText: result.candidateText,
+          jdText: result.jdText,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) setBriefs((b) => ({ ...b, [gap.requirementId]: data.brief }));
+      else setQuestErr(data.message);
+    } catch {
+      setQuestErr("Could not build that quest. Try again.");
+    } finally {
+      setBuilding(null);
+    }
+  }
 
   // Deliberately capped. An honest list of twelve is the same as no list —
   // people cannot act on twelve things, and pretending otherwise is how these
@@ -334,9 +395,32 @@ export function ReadScreen({
                       ? `${g.effortHours * 60} min`
                       : `~${g.effortHours} h`}
                 </span>
+
+                {/* Only project-shaped gaps get a build. A rewrite is ten
+                    minutes of editing, and a gap that cannot be shortcut must
+                    not be handed a weekend that will not fix it. */}
+                {g.kind === "project" && !briefs[g.requirementId] && (
+                  <div className="col-span-3 -mt-1">
+                    <button
+                      type="button"
+                      onClick={() => buildQuest(g)}
+                      disabled={building !== null}
+                      className="border border-[var(--color-gap)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-[var(--color-gap)] hover:bg-[var(--color-gap)]/10 disabled:opacity-40"
+                    >
+                      {building === g.requirementId
+                        ? "Designing the build…"
+                        : "Turn this into a side quest"}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
+          {questErr && (
+            <div className="border-t border-[var(--color-block)] bg-[var(--color-block)]/8 p-3 text-sm">
+              {questErr}
+            </div>
+          )}
           {hidden > 0 && (
             <div className="border-t border-[var(--color-rule)] bg-[var(--color-sunken)] p-3 font-mono text-[11px] text-[var(--color-faint)]">
               + {hidden} more, hidden on purpose — they don&rsquo;t change the
@@ -345,6 +429,29 @@ export function ReadScreen({
           )}
         </div>
       </section>
+
+      {/* ----------------------------------------------------- the quests */}
+      {Object.keys(briefs).length > 0 && (
+        <section className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="font-serif text-2xl font-semibold">Your side quests</h2>
+            <p className="max-w-[64ch] text-sm text-[var(--color-muted)]">
+              Built on what you already have, so it reads as iteration rather
+              than a weekend exercise.
+            </p>
+          </div>
+          <div className="flex flex-col gap-6">
+            {Object.entries(briefs).map(([id, brief]) => (
+              <QuestCard
+                key={id}
+                brief={brief}
+                done={done}
+                onToggle={toggleMilestone}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ------------------------------------------------------- provenance */}
       <footer className="flex flex-col gap-2 border-t border-[var(--color-rule)] pt-5 font-mono text-[11px] leading-relaxed text-[var(--color-faint)]">

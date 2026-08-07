@@ -41,7 +41,12 @@ import * as ratelimit from "../src/lib/ratelimit";
 import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
 import * as db from "../src/lib/store/db";
 import * as localStore from "../src/lib/store/local";
-import type { JobTarget, RequirementMatch } from "../src/lib/schema";
+import { checkBrief } from "../src/lib/pipeline/quest";
+import type {
+  JobTarget,
+  ProjectBrief,
+  RequirementMatch,
+} from "../src/lib/schema";
 
 let passed = 0;
 let failed = 0;
@@ -348,6 +353,97 @@ section("spending is default-deny");
   delete process.env.LLM_SPEND;
   requireExplicitApproval(["node", "script"]);
   if (saved !== undefined) process.env.LLM_SPEND = saved;
+}
+
+// ------------------------------------------------------------ side quests
+
+section("a side quest brief has to survive checking");
+
+{
+  const JD = "Proficiency in Python and a deep understanding of software architecture.";
+  const CV = "Tech - APIs, develop functional demos on Python/Node.js, SQL";
+
+  const good: ProjectBrief = {
+    title: "Put a Python backend behind your extension",
+    proves: [
+      { requirementId: "R1", jdQuote: "Proficiency in Python", from: 1, to: 3 },
+    ],
+    youAlreadyHave: [
+      { what: "API integration patterns", evidenceQuote: "develop functional demos on Python/Node.js" },
+    ],
+    theStretch: ["Python at service shape", "Quota and caching"],
+    timeBudget: { totalHours: 10, sessions: 3 },
+    milestones: [
+      { id: "m1", title: "Proxy", hours: 3, acceptance: ["no key in the bundle"], beforeCutLine: true },
+      { id: "m2", title: "Quota", hours: 3, acceptance: ["over quota returns an error"], beforeCutLine: true },
+      { id: "m3", title: "Tests", hours: 4, acceptance: ["429 degrades to a message"], beforeCutLine: false },
+    ],
+    proofArtifacts: ["repo", "readme"],
+    resumeBullets: ["Cut synthesis calls by {{n}}% with a caching proxy"],
+    talkTrack: { pitch: "I hit the key-custody problem...", likelyFollowUps: ["How did you handle quota?"] },
+    honestLimits: "Does not show production scale.",
+  };
+
+  const sources = { jdText: JD, candidateText: CV };
+  check("a well-formed brief passes", checkBrief(good, sources), []);
+
+  const problem = (b: ProjectBrief) =>
+    checkBrief(b, sources).map((i) => i.path)[0];
+
+  // Each of these is a way the output looks right and is wrong.
+  check(
+    "an unquotable JD claim is caught",
+    problem({ ...good, proves: [{ ...good.proves[0]!, jdQuote: "Deep Kubernetes expertise" }] }),
+    "proves R1",
+  );
+  check(
+    "a fabricated 'you already have' is caught",
+    problem({
+      ...good,
+      youAlreadyHave: [{ what: "Ran a platform team", evidenceQuote: "led a team of twelve engineers" }],
+    }),
+    "youAlreadyHave[0]",
+  );
+  check(
+    "milestones that don't sum to the budget are caught",
+    problem({ ...good, timeBudget: { totalHours: 40, sessions: 3 } }),
+    "timeBudget",
+  );
+  check(
+    "a cut line that isn't actually lighter is caught",
+    problem({
+      ...good,
+      milestones: good.milestones.map((m) => ({ ...m, beforeCutLine: true })),
+    }),
+    "cutLine",
+  );
+  check(
+    "no shippable set at all is caught",
+    problem({
+      ...good,
+      milestones: good.milestones.map((m) => ({ ...m, beforeCutLine: false })),
+    }),
+    "cutLine",
+  );
+  check(
+    "an invented metric on a CV line is caught",
+    problem({ ...good, resumeBullets: ["Cut synthesis calls by 40% with a caching proxy"] }),
+    "resumeBullets[0]",
+  );
+  check(
+    "a level that doesn't actually move is caught",
+    problem({ ...good, proves: [{ ...good.proves[0]!, from: 3, to: 3 }] }),
+    "proves R1",
+  );
+
+  // Placeholders must survive: the number is the candidate's to fill in.
+  ok(
+    "a {{placeholder}} metric is allowed",
+    checkBrief(
+      { ...good, resumeBullets: ["Served {{n}} requests across {{m}} users"] },
+      sources,
+    ).length === 0,
+  );
 }
 
 // ------------------------------------------------------------ persistence
