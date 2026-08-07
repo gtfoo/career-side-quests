@@ -15,6 +15,19 @@ export type CallRecord = {
   modelSpec: string;
   inputTokens: number;
   outputTokens: number;
+  /**
+   * Reasoning is billed as OUTPUT, and output costs several times input. On a
+   * measured run it was ~88% of a call's output — the model deliberating, not
+   * answering. Without this column the bill looks like "the objects are big",
+   * which points at the schema instead of at the effort setting.
+   */
+  reasoningTokens: number;
+  /**
+   * Input served from the provider's prompt cache. Zero across a fan-out that
+   * shares a long prefix means the prefix is not actually shared — usually
+   * because something varying sits in front of it.
+   */
+  cachedInputTokens: number;
   /** Retries are counted separately — they are pure waste and worth seeing. */
   isRetry: boolean;
 };
@@ -41,12 +54,16 @@ export class UsageLedger {
   totals() {
     const input = this.calls.reduce((n, c) => n + c.inputTokens, 0);
     const output = this.calls.reduce((n, c) => n + c.outputTokens, 0);
+    const reasoning = this.calls.reduce((n, c) => n + c.reasoningTokens, 0);
+    const cached = this.calls.reduce((n, c) => n + c.cachedInputTokens, 0);
     const retries = this.calls.filter((c) => c.isRetry);
     return {
       calls: this.calls.length,
       retries: retries.length,
       input,
       output,
+      reasoning,
+      cached,
       // Retried calls cost full price and produce nothing new. Tracking this
       // separately is what makes a validation-failure problem visible as a
       // COST problem rather than only a quality one.
@@ -86,8 +103,14 @@ export class UsageLedger {
     const lines = [
       `── ${label}`,
       `  calls        ${t.calls}${t.retries ? ` (${t.retries} were retries)` : ""}`,
-      `  input        ${t.input.toLocaleString()} tokens`,
-      `  output       ${t.output.toLocaleString()} tokens`,
+      `  input        ${t.input.toLocaleString()} tokens${
+        t.cached ? ` (${t.cached.toLocaleString()} served from cache)` : " (none cached)"
+      }`,
+      `  output       ${t.output.toLocaleString()} tokens${
+        t.reasoning
+          ? ` — ${Math.round((t.reasoning / t.output) * 100)}% of it reasoning`
+          : ""
+      }`,
       `  cost         $${t.cost.toFixed(4)}`,
     ];
     if (t.retries) {

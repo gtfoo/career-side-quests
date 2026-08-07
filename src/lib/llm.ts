@@ -444,11 +444,16 @@ export async function generate<T>(args: {
         providerOptions: providerOptions(spec, args.stage),
       });
       // Record before returning, so no successful call can escape accounting.
+      const u = res.usage as
+        | { reasoningTokens?: number; cachedInputTokens?: number }
+        | undefined;
       ledger.record({
         stage: args.stage,
         modelSpec: spec,
         inputTokens: res.usage?.inputTokens ?? 0,
         outputTokens: res.usage?.outputTokens ?? 0,
+        reasoningTokens: u?.reasoningTokens ?? 0,
+        cachedInputTokens: u?.cachedInputTokens ?? 0,
         isRetry: args.isRetry ?? false,
       });
 

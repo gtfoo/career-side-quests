@@ -103,25 +103,38 @@ export async function matchRequirement(args: {
   const { requirement, profile, target, candidateSource } = args;
   const knownIds = new Set(profile.atoms.map((a) => a.id));
 
+  // Everything IDENTICAL across the fan-out goes in the system prompt, and the
+  // one thing that varies goes in the user prompt. Prompt caching is a prefix
+  // match, so a single varying byte early on makes everything after it
+  // uncacheable — and the evidence block is by far the largest part.
+  //
+  // This was originally the other way round: the requirement sat above the
+  // evidence, so all eight calls paid full price for the same few thousand
+  // tokens and the response came back with cacheReadTokens: 0.
+  const sharedContext = [
+    MATCH_SYSTEM,
+    "",
+    `Role: ${target.title}${target.company ? ` at ${target.company}` : ""}`,
+    "",
+    "Candidate evidence:",
+    renderEvidence(profile),
+  ].join("\n");
+
   const { value, issues } = await withValidation({
     label: `match:${requirement.id}`,
     attempt: async (feedback) =>
       generate({
         stage: "match",
         schema: RequirementMatch,
-        system: MATCH_SYSTEM,
+        system: sharedContext,
+        isRetry: Boolean(feedback),
         prompt: [
-          feedback,
-          `Role: ${target.title}${target.company ? ` at ${target.company}` : ""}`,
-          "",
           `Requirement ${requirement.id} (${requirement.kind}, ${
             requirement.mustHave ? "required" : "preferred"
           }):`,
           requirement.text,
           `Stated in the posting as: "${requirement.quote}"`,
-          "",
-          "Candidate evidence:",
-          renderEvidence(profile),
+          feedback,
         ]
           .filter(Boolean)
           .join("\n"),
