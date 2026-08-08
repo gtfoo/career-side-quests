@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { Adapter, AdapterUser, VerificationToken } from "next-auth/adapters";
+import type {
+  Adapter,
+  AdapterAuthenticator,
+  AdapterUser,
+  VerificationToken,
+} from "next-auth/adapters";
 import { getDb } from "./db";
 
 /**
@@ -114,6 +119,67 @@ export function SqliteAdapter(): Adapter {
         .run(provider, providerAccountId);
     },
 
+    // ---------------------------------------------------------- passkeys
+
+    async getAuthenticator(credentialID) {
+      return toAuthenticator(
+        getDb()
+          .prepare(`SELECT * FROM authenticators WHERE credential_id = ?`)
+          .get(credentialID),
+      );
+    },
+
+    async createAuthenticator(authenticator) {
+      getDb()
+        .prepare(
+          `INSERT INTO authenticators
+             (credential_id, user_id, provider_account_id, credential_public_key,
+              counter, credential_device_type, credential_backed_up, transports, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          authenticator.credentialID,
+          authenticator.userId,
+          authenticator.providerAccountId,
+          authenticator.credentialPublicKey,
+          authenticator.counter,
+          authenticator.credentialDeviceType,
+          authenticator.credentialBackedUp ? 1 : 0,
+          authenticator.transports ?? null,
+          new Date().toISOString(),
+        );
+      return authenticator;
+    },
+
+    async listAuthenticatorsByUserId(userId) {
+      const rows = getDb()
+        .prepare(
+          `SELECT * FROM authenticators WHERE user_id = ? ORDER BY created_at`,
+        )
+        .all(userId);
+      return rows
+        .map((r) => toAuthenticator(r))
+        .filter((a): a is AdapterAuthenticator => a !== null);
+    },
+
+    /**
+     * The counter is a clone detector: an authenticator increments it on every
+     * use, so a value that fails to advance means two devices are presenting
+     * the same credential. Persisting it is what makes that detectable.
+     */
+    async updateAuthenticatorCounter(credentialID, counter) {
+      getDb()
+        .prepare(
+          `UPDATE authenticators SET counter = ? WHERE credential_id = ?`,
+        )
+        .run(counter, credentialID);
+      return toAuthenticator(
+        getDb()
+          .prepare(`SELECT * FROM authenticators WHERE credential_id = ?`)
+          .get(credentialID),
+      )!;
+    },
+
     async createVerificationToken(token) {
       getDb()
         .prepare(
@@ -162,6 +228,32 @@ type Row = {
   image: string | null;
   email_verified: string | null;
 };
+
+type AuthRow = {
+  credential_id: string;
+  user_id: string;
+  provider_account_id: string;
+  credential_public_key: string;
+  counter: number;
+  credential_device_type: string;
+  credential_backed_up: number;
+  transports: string | null;
+};
+
+function toAuthenticator(row: unknown): AdapterAuthenticator | null {
+  const r = row as AuthRow | undefined;
+  if (!r) return null;
+  return {
+    credentialID: r.credential_id,
+    userId: r.user_id,
+    providerAccountId: r.provider_account_id,
+    credentialPublicKey: r.credential_public_key,
+    counter: r.counter,
+    credentialDeviceType: r.credential_device_type,
+    credentialBackedUp: Boolean(r.credential_backed_up),
+    transports: r.transports ?? undefined,
+  };
+}
 
 function toUser(row: unknown): AdapterUser | null {
   const r = row as Row | undefined;

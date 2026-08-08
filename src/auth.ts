@@ -1,10 +1,11 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
+import Passkey from "next-auth/providers/passkey";
 import Resend from "next-auth/providers/resend";
 import { PRODUCT } from "@/config/product";
 import { SqliteAdapter } from "@/lib/store/adapter";
-import { getUserById, touchUser } from "@/lib/store/db";
+import { tokenVersion, touchUser } from "@/lib/store/db";
 
 /**
  * Sign-in.
@@ -58,9 +59,57 @@ if (process.env.AUTH_RESEND_KEY) {
   );
 }
 
+/**
+ * Passkeys, off unless asked for.
+ *
+ * Opt-in because WebAuthn is still experimental in Auth.js — it refuses to boot
+ * without `experimental.enableWebAuthn` and warns on every start — and this is
+ * an experimental feature inside a beta dependency. A flag means it can be
+ * turned off without a deploy.
+ *
+ * A passkey is a convenience, not a replacement for the link. It lives on the
+ * device, so it makes returning to a device you already use nearly instant; it
+ * does NOT get you onto a new device, which is the thing accounts exist for
+ * here. Email always works anywhere.
+ */
+const passkeysEnabled =
+  Boolean(process.env.AUTH_PASSKEYS) && providers.length > 0;
+
+if (passkeysEnabled) {
+  providers.push(
+    Passkey({
+      /**
+       * Refuse to mint an account from a passkey alone.
+       *
+       * The default returns `{ user: { email }, exists: false }` for an address
+       * it has never seen, which registers a NEW account for it — with the
+       * email unverified, because nothing was ever sent to it. That is an
+       * account takeover waiting to happen: squat a passkey on someone's
+       * address, wait for them to sign in by magic link, and Auth.js matches
+       * them to the same row by email. Their account, your passkey.
+       *
+       * Returning null means registration is reachable only while already
+       * signed in, so a passkey can only be ADDED by someone who has already
+       * proved the address is theirs by receiving a link at it. Authenticating
+       * with an existing passkey stays open.
+       */
+      getUserInfo: async (options, request) => {
+        const email =
+          request.method === "POST"
+            ? (request.body?.email as string | undefined)
+            : (request.query?.email as string | undefined);
+        if (!email) return null;
+        const user = await options.adapter?.getUserByEmail?.(email);
+        return user ? { user, exists: true } : null;
+      },
+    }),
+  );
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: SqliteAdapter(),
   providers,
+  experimental: { enableWebAuthn: passkeysEnabled },
   session: { strategy: "jwt" },
   pages: { signIn: "/signin", verifyRequest: "/signin/check-email" },
   callbacks: {
@@ -73,14 +122,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user?.id) {
         token.uid = user.id;
-        token.tv = getUserById(user.id)?.token_version ?? 0;
+        token.tv = tokenVersion(user.id) ?? 0;
         touchUser(user.id);
         return token;
       }
       if (typeof token.uid === "string") {
-        const row = getUserById(token.uid);
-        // Account deleted, or every session revoked.
-        if (!row || row.token_version !== token.tv) return null;
+        const tv = tokenVersion(token.uid);
+        // null = account deleted; a mismatch = every session revoked. Both
+        // invalidate, but they are different facts and collapsing them to 0
+        // would let a deleted account's token keep working.
+        if (tv === null || tv !== token.tv) return null;
       }
       return token;
     },
@@ -104,8 +155,24 @@ export function authConfigured(): boolean {
   return Boolean(process.env.AUTH_SECRET) && providers.length > 0;
 }
 
+/** Are passkeys on? Decides whether to offer them in the UI. */
+export function passkeysConfigured(): boolean {
+  return authConfigured() && passkeysEnabled;
+}
+
 /** Safe session read: null when auth is not configured, instead of throwing. */
-export async function currentUser() {
+export async function currentUser(): Promise<{
+  id: string;
+  email: string;
+} | null> {
   if (!authConfigured()) return null;
-  return (await auth())?.user ?? null;
+  try {
+    const user = (await auth())?.user;
+    if (!user?.id) return null;
+    return { id: user.id, email: user.email ?? "" };
+  } catch (err) {
+    // A session that cannot be read is a signed-out reader, not a broken page.
+    console.error("session read failed", err);
+    return null;
+  }
 }

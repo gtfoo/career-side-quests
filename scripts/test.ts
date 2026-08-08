@@ -40,6 +40,7 @@ import { resolveChain } from "../src/lib/llm";
 import * as ratelimit from "../src/lib/ratelimit";
 import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
 import * as db from "../src/lib/store/db";
+import * as passkeys from "../src/lib/store/passkeys";
 import * as localStore from "../src/lib/store/local";
 import { deriveGaps } from "../src/lib/pipeline/assess";
 import { checkBrief } from "../src/lib/pipeline/quest";
@@ -560,6 +561,74 @@ section("saved reads belong to exactly one account");
   rmSync(tmp, { force: true });
   rmSync(`${tmp}-wal`, { force: true });
   rmSync(`${tmp}-shm`, { force: true });
+}
+
+section("passkeys are scoped to their owner");
+
+{
+  const tmp2 = join(tmpdir(), `csq-pk-${Date.now()}.db`);
+  db._resetForTests(tmp2);
+  const conn = db.getDb();
+  const now = new Date().toISOString();
+  for (const [id, email] of [
+    ["alice", "a@example.com"],
+    ["mallory", "m@example.com"],
+  ] as const) {
+    conn
+      .prepare(
+        `INSERT INTO users (id, email, name, image, created_at, last_seen_at)
+         VALUES (?, ?, NULL, NULL, ?, ?)`,
+      )
+      .run(id, email, now, now);
+  }
+  conn
+    .prepare(
+      `INSERT INTO authenticators
+         (credential_id, user_id, provider_account_id, credential_public_key,
+          counter, credential_device_type, credential_backed_up, transports, created_at)
+       VALUES ('cred-1', 'alice', 'acct-1', 'pub', 0, 'multiDevice', 1, NULL, ?)`,
+    )
+    .run(now);
+
+  const listed = passkeys.listPasskeys("alice");
+  check("the owner sees their passkey", listed.length, 1);
+  check("with a readable device type", listed[0]?.deviceType, "multiDevice");
+  ok(
+    "and no credential material reaches the caller",
+    !Object.keys(listed[0] ?? {}).some((k) =>
+      /public|counter|transport/i.test(k),
+    ),
+  );
+
+  check("nobody else sees it", passkeys.listPasskeys("mallory").length, 0);
+  // A lost laptop's passkey must be revocable, and only by its owner.
+  ok(
+    "a known credential id is useless to another account",
+    !passkeys.removePasskey("mallory", "cred-1"),
+  );
+  ok("it survives that attempt", passkeys.hasPasskeys("alice"));
+  ok("the owner can revoke it", passkeys.removePasskey("alice", "cred-1"));
+  ok("and then it is gone", !passkeys.hasPasskeys("alice"));
+
+  // Deleting an account must take its credentials with it.
+  conn
+    .prepare(
+      `INSERT INTO authenticators
+         (credential_id, user_id, provider_account_id, credential_public_key,
+          counter, credential_device_type, credential_backed_up, transports, created_at)
+       VALUES ('cred-2', 'alice', 'acct-2', 'pub', 0, 'singleDevice', 0, NULL, ?)`,
+    )
+    .run(now);
+  db.deleteAccount("alice");
+  ok("account deletion cascades to passkeys", !passkeys.hasPasskeys("alice"));
+
+  // token_version distinguishes "revoked" from "deleted"; collapsing them to 0
+  // would let a deleted account's JWT keep working.
+  check("a deleted user has no token version", db.tokenVersion("alice"), null);
+  check("a live user has one", db.tokenVersion("mallory"), 0);
+
+  conn.close();
+  for (const s of ["", "-wal", "-shm"]) rmSync(`${tmp2}${s}`, { force: true });
 }
 
 section("rate limits protect the expensive and the sendable");

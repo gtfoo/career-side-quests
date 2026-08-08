@@ -29,6 +29,7 @@ import { extractCandidate, extractJobTarget } from "../src/lib/pipeline/extract"
 import { matchAll } from "../src/lib/pipeline/match";
 import type { RequirementMatch } from "../src/lib/schema";
 import { requireExplicitApproval } from "../src/lib/spend";
+import { ledger } from "../src/lib/usage";
 
 // Must run before anything can reach a model. Without --allow-spend this
 // revokes any standing permission inherited from .env.local. The spike is the
@@ -173,6 +174,10 @@ async function main() {
   } else {
     console.log("\nevery requirement scored identically across runs.");
   }
+
+  // Cost belongs next to stability: the whole point of comparing strategies is
+  // that one may be cheaper AND worse, and neither number decides alone.
+  console.log("\n" + ledger.report("what this cost"));
 
   console.log(
     spread <= 10

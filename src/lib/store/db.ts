@@ -63,6 +63,21 @@ export function getDb(): Database.Database {
       PRIMARY KEY (provider, provider_account_id)
     );
 
+    -- Passkeys. The public key is stored; the private key never leaves the
+    -- user's device, which is the whole point of the mechanism.
+    CREATE TABLE IF NOT EXISTS authenticators (
+      credential_id           TEXT PRIMARY KEY,
+      user_id                 TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider_account_id     TEXT NOT NULL,
+      credential_public_key   TEXT NOT NULL,
+      counter                 INTEGER NOT NULL,
+      credential_device_type  TEXT NOT NULL,
+      credential_backed_up    INTEGER NOT NULL,
+      transports              TEXT,
+      created_at              TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS authenticators_by_user ON authenticators(user_id);
+
     -- Magic-link tokens. Single use, short lived, and deleted on use.
     CREATE TABLE IF NOT EXISTS verification_tokens (
       identifier TEXT NOT NULL,
@@ -110,6 +125,20 @@ export type UserRow = {
   image: string | null;
   token_version: number;
 };
+
+/**
+ * The token version, or null when the user is gone.
+ *
+ * The distinction matters: null means the account was deleted, a number that
+ * no longer matches means every session was revoked. Both invalidate a JWT, but
+ * collapsing them into 0 would let a deleted account's token keep working.
+ */
+export function tokenVersion(id: string): number | null {
+  const row = getDb()
+    .prepare(`SELECT token_version FROM users WHERE id = ?`)
+    .get(id) as { token_version: number } | undefined;
+  return row ? row.token_version : null;
+}
 
 export function getUserById(id: string): UserRow | undefined {
   return getDb()
