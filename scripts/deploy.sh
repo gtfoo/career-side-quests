@@ -22,16 +22,50 @@ cd "$(dirname "$0")/.."
 # live is worse than no deploy log.
 git config --global --add safe.directory "$PWD" >/dev/null 2>&1 || true
 
-# Prefer nvm's Node 20 if this host uses nvm; otherwise fall back to the system
-# Node on PATH (the droplet's deploy user has system Node 20, no nvm).
+# ---------------------------------------------------------------- the lock
+#
+# One box, four Next apps, and each repo's CI concurrency group only serializes
+# against ITSELF — GitHub cannot serialize across repositories. Two apps have
+# already built simultaneously here. On ~600MB of available RAM that is not a
+# slow deploy, it is an OOM.
+#
+# This matters more for this app than the others: it is the only one with a
+# native addon (better-sqlite3), and `npm ci` compiles it. The lock is shared
+# by path, so every app's deploy.sh must use the SAME file for it to work.
+LOCK="${DEPLOY_LOCK:-/var/lock/droplet-deploy.lock}"
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK" || true
+  if ! flock -w 1800 9; then
+    echo "!!  another deploy held $LOCK for 30 minutes; giving up." >&2
+    exit 1
+  fi
+  echo "==> holding $LOCK"
+else
+  echo "!!  flock unavailable — deploys are NOT serialized on this host." >&2
+fi
+
+# Use whatever Node this host actually has. There is no nvm on the droplet and
+# the system Node is 22; an earlier version of this script asked nvm for 20,
+# which silently did nothing. Pinning a version that is not installed is worse
+# than not pinning one, because the build then differs from the runtime without
+# saying so — and a native addon compiled against the wrong ABI fails at
+# require() time, long after the deploy reports success.
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [ -s "$NVM_DIR/nvm.sh" ]; then
   # shellcheck disable=SC1090
   . "$NVM_DIR/nvm.sh"
-  nvm use 20 >/dev/null
+  nvm use --lts >/dev/null 2>&1 || true
 fi
+echo "==> node $(node -v) / npm $(npm -v)"
 
 SERVICE="${SIDEQUESTS_SERVICE:-career-side-quests}"
+
+# A native addon build is the memory-hungriest step here, and this box has run
+# out before. Report the headroom so a failed deploy is diagnosable from the log
+# rather than from guesswork.
+if command -v free >/dev/null 2>&1; then
+  echo "==> memory available: $(free -m | awk 'NR==2{print $7}') MB"
+fi
 
 # Warn loudly rather than shipping a build that will 500 on every read. Not
 # fatal: the input screen and posting lookup work without a model key, so a
@@ -43,11 +77,28 @@ elif ! grep -qE '^[A-Z_]*API_KEY=.+' .env.local; then
   echo "!!  WARNING: .env.local has no populated *_API_KEY." >&2
 fi
 
+# The database is gitignored, so a hard-reset deploy leaves it alone — but it
+# now holds real accounts, and losing it is unrecoverable. Say where it is and
+# how big, so a deploy that ever does destroy it is visible in the log.
+DB="${DB_PATH:-data/app.db}"
+if [ -f "$DB" ]; then
+  echo "==> database present: $DB ($(du -h "$DB" | cut -f1))"
+fi
+
 echo "==> npm ci"
 npm ci
 
 echo "==> next build"
 npm run build
+
+# better-sqlite3 is a native addon compiled during npm ci. If it was built
+# against a different Node ABI than the one serving, it fails at require() —
+# which happens on the first request, not here, so the deploy would report
+# success and the site would 500. Load it now, while the log is still watching.
+if [ -d node_modules/better-sqlite3 ]; then
+  node -e "require('better-sqlite3'); console.log('==> better-sqlite3 loads under', process.version)" \
+    || { echo "!!  better-sqlite3 will not load — ABI mismatch. Not restarting." >&2; exit 1; }
+fi
 
 echo "==> restarting ${SERVICE}"
 sudo systemctl restart "${SERVICE}"
