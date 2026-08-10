@@ -32,14 +32,29 @@ git config --global --add safe.directory "$PWD" >/dev/null 2>&1 || true
 # This matters more for this app than the others: it is the only one with a
 # native addon (better-sqlite3), and `npm ci` compiles it. The lock is shared
 # by path, so every app's deploy.sh must use the SAME file for it to work.
+# Shared by root (manual deploys) AND deploy (CI), so the file must be writable
+# by both. Created 0666 deliberately: it carries no data, only the lock, and a
+# root-owned lock that CI cannot open is a deploy that fails for the wrong
+# reason. Which is exactly what happened the first time CI ran.
 LOCK="${DEPLOY_LOCK:-/var/lock/droplet-deploy.lock}"
 if command -v flock >/dev/null 2>&1; then
-  exec 9>"$LOCK" || true
-  if ! flock -w 1800 9; then
-    echo "!!  another deploy held $LOCK for 30 minutes; giving up." >&2
-    exit 1
+  if [ ! -e "$LOCK" ]; then
+    ( umask 000; : > "$LOCK" ) 2>/dev/null || true
   fi
-  echo "==> holding $LOCK"
+  # Distinguish "cannot open" from "waited and timed out". Collapsing them
+  # reported a 30-minute wait that never happened and sent the diagnosis in
+  # entirely the wrong direction.
+  if exec 9>"$LOCK"; then
+    if flock -w 1800 9; then
+      echo "==> holding $LOCK"
+    else
+      echo "!!  another deploy held $LOCK for 30 minutes; giving up." >&2
+      exit 1
+    fi
+  else
+    echo "!!  cannot open $LOCK (permissions?) — continuing WITHOUT the lock." >&2
+    echo "!!  fix: sudo chmod 666 $LOCK" >&2
+  fi
 else
   echo "!!  flock unavailable — deploys are NOT serialized on this host." >&2
 fi
