@@ -103,16 +103,36 @@ fi
 echo "==> npm ci"
 npm ci
 
+# better-sqlite3 is a native addon. If it was compiled against a different Node
+# ABI than the one serving, it fails on the first database request — so the
+# deploy would report success and the site would 500 later.
+#
+# It must CONSTRUCT, not merely require. The addon is not referenced in the
+# entry file at all; it loads inside the Database constructor, so
+# `require('better-sqlite3')` exits 0 on a genuine mismatch and cannot fail.
+# Verified here: the entry file contains no reference to the .node binary.
+#
+# Unconditional, and BEFORE the build: npm ci is commonly a no-op when the
+# lockfile is unchanged, while the host's Node can still move underneath an
+# untouched node_modules — and a bad addon should fail in seconds rather than
+# after a full compile. `:memory:` opens no file, so this is safe as any user.
+if [ -d node_modules/better-sqlite3 ]; then
+  node -e "new (require('better-sqlite3'))(':memory:').close()" \
+    && echo "==> better-sqlite3 constructs under $(node -v)" \
+    || { echo "!!  better-sqlite3 ABI mismatch — not building, not restarting." >&2; exit 1; }
+fi
+
 echo "==> next build"
 npm run build
 
-# better-sqlite3 is a native addon compiled during npm ci. If it was built
-# against a different Node ABI than the one serving, it fails at require() —
-# which happens on the first request, not here, so the deploy would report
-# success and the site would 500. Load it now, while the log is still watching.
-if [ -d node_modules/better-sqlite3 ]; then
-  node -e "require('better-sqlite3'); console.log('==> better-sqlite3 loads under', process.version)" \
-    || { echo "!!  better-sqlite3 will not load — ABI mismatch. Not restarting." >&2; exit 1; }
+# The standalone server needs these copied in; Next does not do it. Doing it
+# here means the systemd unit can be switched to
+# `node .next/standalone/server.js` without a second round trip — which is what
+# turns 56 MB of currently-unserved build output into the thing actually served.
+if [ -d .next/standalone ]; then
+  cp -r .next/static .next/standalone/.next/static 2>/dev/null || true
+  [ -d public ] && cp -r public .next/standalone/public 2>/dev/null || true
+  echo "==> standalone bundle assembled ($(du -sh .next/standalone | cut -f1)) — unit still runs next start"
 fi
 
 echo "==> restarting ${SERVICE}"

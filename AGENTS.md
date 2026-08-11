@@ -1,5 +1,12 @@
 # Working on Career Side Quests
 
+## Shared droplet contract
+
+Infra facts, the deploy lock, ownership, and the current phase are shared
+across all four apps and maintained by the droplet agent. Read, don't edit.
+
+@~/Git/INFRA.md
+
 ## This is NOT the Next.js you know
 
 Next 16 has breaking changes — APIs, conventions and file structure may differ

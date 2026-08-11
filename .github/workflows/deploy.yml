@@ -5,6 +5,22 @@ name: Deploy to droplet
 on:
   push:
     branches: [main]
+    # Commits that cannot change what the droplet serves. Expect cross-repo
+    # CONSISTENCY, not savings: applied to carpark's last 25 pushes this would
+    # have skipped none of them.
+    #
+    # Two exclusions learned the hard way elsewhere, so the reasoning matters
+    # more than the list:
+    #   - NOT scripts/**. The deploy is how scripts reach the droplet, and they
+    #     are run there by hand right after a push.
+    #   - NOT any test path. paths-ignore skips the WHOLE workflow, test job
+    #     included, which would silence the gate on exactly the commits that
+    #     move it.
+    paths-ignore:
+      - "**/*.md"
+      - ".gitignore"
+      - "fixtures/**"
+      - "LICENSE"
   workflow_dispatch: {}
 
 # Never let two deploys overlap; queue them instead of interrupting a build.
