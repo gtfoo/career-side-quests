@@ -36,6 +36,7 @@ import {
   isGrounded,
   normalise,
 } from "../src/lib/pipeline/validate";
+import { readFilename } from "../src/lib/filename";
 import { resolveChain } from "../src/lib/llm";
 import * as ratelimit from "../src/lib/ratelimit";
 import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
@@ -814,6 +815,74 @@ section("local storage: survives a refresh, fails safe");
   if (!hadWindow) delete g.window;
 }
 
+// ------------------------------------------------------------- pdf filename
+
+/**
+ * The saved-PDF name is derived from a job title we did not write — it comes
+ * out of a scraped posting — so the interesting cases are all hostile input,
+ * not the happy path.
+ */
+function filenameTests() {
+  section("pdf filename");
+
+  check(
+    "role and company are both in the name",
+    readFilename("Career Side Quests", "Solutions Engineer", "ElevenLabs"),
+    "Career Side Quests — Solutions Engineer at ElevenLabs",
+  );
+  check(
+    "a missing company does not leave a dangling 'at'",
+    readFilename("Career Side Quests", "Solutions Engineer", null),
+    "Career Side Quests — Solutions Engineer",
+  );
+  check(
+    "a missing role leaves just the product",
+    readFilename("Career Side Quests", "", ""),
+    "Career Side Quests",
+  );
+
+  // A path separator in a title is the one that actually matters: unescaped it
+  // turns the download into a directory traversal on POSIX.
+  check(
+    "slashes cannot form a path",
+    readFilename("P", "Sales / Solutions Engineer", null),
+    "P — Sales - Solutions Engineer",
+  );
+  check(
+    "windows-illegal characters are replaced, not dropped",
+    readFilename("P", 'Eng: "Growth" <APAC>?*|', null),
+    "P — Eng- -Growth- -APAC-",
+  );
+  ok(
+    "a newline in a scraped title does not weld words together",
+    readFilename("P", "Solutions\nEngineer", null) === "P — Solutions Engineer",
+  );
+  ok(
+    "ordinary punctuation survives",
+    readFilename("P", "Engineer (L5), Data & AI", null) ===
+      "P — Engineer (L5), Data & AI",
+  );
+  ok(
+    "a leading dot cannot hide the file",
+    !readFilename("P", "", "").startsWith(".") &&
+      !readFilename(".hidden", "", "").startsWith("."),
+  );
+  check(
+    "trailing dots and spaces are trimmed (windows strips them silently)",
+    readFilename("P", "Engineer...  ", null),
+    "P — Engineer",
+  );
+  ok(
+    "an absurd title is capped",
+    readFilename("P", "x".repeat(400), null).length <= 120,
+  );
+  check(
+    "a title of pure punctuation falls back to the product name",
+    readFilename("Career Side Quests", "///", null),
+    "Career Side Quests",
+  );
+}
+
 // --------------------------------------------------------------- pdf layout
 
 async function pdfTests() {
@@ -835,6 +904,8 @@ async function pdfTests() {
     !/platform user to\s+MBA/i.test(doc.text),
   );
 }
+
+filenameTests();
 
 pdfTests()
   .then(() => {

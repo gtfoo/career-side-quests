@@ -42,3 +42,94 @@ body {
   background: var(--color-paper);
   color: var(--color-ink);
 }
+
+/* --------------------------------------------------------------- printing
+ *
+ * "Save as PDF" is the browser's own print-to-PDF; see src/app/usePrintable.ts
+ * for why there is no renderer on the server. Everything below exists because
+ * a page that looks right on screen does not print right by default.
+ */
+@media print {
+  /* The trap nobody sees coming: if the reader's OS is in dark mode, the block
+     above has already swapped this palette to pale ink on near-black — and
+     printing drops page backgrounds — so the PDF arrives as white text on
+     white paper. Restating every colour here is what makes the file readable
+     at all. The values are also pulled darker than their screen counterparts,
+     because contrast that works backlit does not survive ink. */
+  :root {
+    --color-paper: #ffffff;
+    --color-surface: #ffffff;
+    --color-sunken: #f2f5f1;
+    --color-ink: #101613;
+    --color-muted: #47524b;
+    --color-faint: #6b7770;
+    --color-rule: #bcc6bc;
+    --color-carry: #0a5347;
+    --color-gap: #7d4f08;
+    --color-block: #853325;
+  }
+
+  /* The split bar and the level tracks are the only findings on this page that
+     are not also written out in words, and both are pure background — so they
+     print as empty outlines unless this is set. Applied broadly rather than
+     per-element because the palette above is white-on-white everywhere else,
+     so there is nothing else left to over-ink. */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 14mm 12mm 15mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  /* The on-screen shell: a centred column with a 6rem tail for scroll comfort.
+     On paper the @page margin already does that job, and the tail is a blank
+     final sheet. */
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  /* Nothing here does anything without a cursor: start over, delete everything,
+     turn this into a side quest, show anyway. */
+  button {
+    display: none !important;
+  }
+
+  /* Locked CV lines are blurred on screen, which prints as an unreadable grey
+     smear that looks like a rendering fault. Drop the body and keep the
+     "Locked" label above it, which explains the absence. */
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Keep a claim on the same page as its evidence — a requirement whose
+     supporting quotes land overleaf reads as unsupported. */
+  details,
+  label,
+  li,
+  q,
+  header {
+    break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
+  }
+
+  p {
+    orphans: 3;
+    widows: 3;
+  }
+}

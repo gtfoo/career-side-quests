@@ -170,7 +170,10 @@ export function QuestCard({
             className={
               showRewards
                 ? "flex flex-col gap-3.5"
-                : "pointer-events-none select-none blur-[4.5px] opacity-50"
+                : // print-hide: blur is a screen effect. On paper it prints as a
+                  // grey smear that reads as a rendering fault, so the print
+                  // stylesheet drops this block and leaves the "Locked" label.
+                  "print-hide pointer-events-none select-none blur-[4.5px] opacity-50"
             }
             aria-hidden={!showRewards}
           >

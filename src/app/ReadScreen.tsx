@@ -10,7 +10,10 @@ import type {
   Requirement,
 } from "@/lib/schema";
 import * as local from "@/lib/store/local";
+import { PRODUCT } from "@/config/product";
+import { readFilename } from "@/lib/filename";
 import { QuestCard } from "./QuestCard";
+import { usePrintable } from "./usePrintable";
 
 /**
  * The read.
@@ -116,6 +119,10 @@ export function ReadScreen({
     () => new Set(local.load()?.progress ?? []),
   );
 
+  const print = usePrintable(
+    readFilename(PRODUCT.name, target.title, target.company),
+  );
+
   function toggleMilestone(id: string) {
     setDone((prev) => {
       const next = new Set(prev);
@@ -165,12 +172,25 @@ export function ReadScreen({
   return (
     <div className="flex flex-col gap-10">
       <header className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--color-faint)]">
-            {target.title}
-            {target.company ? ` — ${target.company}` : ""}
-          </span>
-          <h1 className="font-serif text-3xl font-semibold">Your read</h1>
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex flex-col gap-1">
+            <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--color-faint)]">
+              {target.title}
+              {target.company ? ` — ${target.company}` : ""}
+            </span>
+            <h1 className="font-serif text-3xl font-semibold">Your read</h1>
+          </div>
+          {/* Named for the destination, not the mechanism. It opens the print
+              dialog, where "Save as PDF" is the default destination on every
+              desktop browser — calling it "Print" would read as paper. */}
+          <button
+            type="button"
+            onClick={print}
+            title="Opens your browser's print dialog — choose 'Save as PDF' as the destination. Every scored row is expanded first, so the file carries the full evidence."
+            className="mt-1 shrink-0 border border-[var(--color-rule)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider hover:border-[var(--color-ink)]"
+          >
+            Save as PDF
+          </button>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-[5px]">
