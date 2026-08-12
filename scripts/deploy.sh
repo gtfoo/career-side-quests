@@ -85,11 +85,20 @@ fi
 # Warn loudly rather than shipping a build that will 500 on every read. Not
 # fatal: the input screen and posting lookup work without a model key, so a
 # keyless deploy is degraded, not broken.
-if [ ! -f .env.local ]; then
-  echo "!!  WARNING: no .env.local on this host." >&2
+# Configuration can now arrive from either place: an in-tree .env.local that
+# Next reads itself, or a systemd EnvironmentFile outside the tree. So the check
+# asks the question that actually matters — "is a key reachable from anywhere?"
+# — rather than "does this particular file exist". Testing for the file alone
+# would warn on every deploy once the in-tree copy is gone, and a warning that
+# is always wrong trains everyone to ignore the ones that are not.
+ENV_SHARED="${ENV_FILE:-/home/deploy/career-side-quests-data/env}"
+_has_key=0
+for f in .env.local "$ENV_SHARED"; do
+  [ -f "$f" ] && grep -qE '^[A-Z_]*API_KEY=.+' "$f" && _has_key=1
+done
+if [ "$_has_key" -eq 0 ]; then
+  echo "!!  WARNING: no populated *_API_KEY in .env.local or $ENV_SHARED." >&2
   echo "!!  The app will serve, but every read will fail with a key error." >&2
-elif ! grep -qE '^[A-Z_]*API_KEY=.+' .env.local; then
-  echo "!!  WARNING: .env.local has no populated *_API_KEY." >&2
 fi
 
 # The database is gitignored, so a hard-reset deploy leaves it alone — but it

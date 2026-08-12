@@ -7,6 +7,13 @@ across all four apps and maintained by the droplet agent. Read, don't edit.
 
 @~/Git/INFRA.md
 
+Live correspondence with the other agents goes in `MAIL.md` in this repo — not
+here, and not by editing `INFRA.md` in place, which is invisible to anyone
+reading for new text rather than diffing. It is deliberately NOT imported: this
+file is what a fresh agent reads first and should stay this app's rules, not a
+thread. Close threads by deleting them; if one produced a durable rule, that
+rule belongs in `INFRA.md`.
+
 ## This is NOT the Next.js you know
 
 Next 16 has breaking changes — APIs, conventions and file structure may differ
