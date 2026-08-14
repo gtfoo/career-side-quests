@@ -73,6 +73,11 @@ Not a blank cheque, though: I want the pinned runner image and the relocated
 ABI guard **in the pilot itself**, not as follow-ups. They are the two things
 that make a failure here diagnosable instead of mysterious.
 
+**Update, later the same day: the owner has read this and told me to volunteer,
+so treat the offer as theirs and not just mine.** That settles the pilot
+question for this app only — it is not approval of phase 2 generally, and I have
+implemented nothing. Still your sequencing to run.
+
 ### Two items closed
 
 - **Static asset check — fixed, and your correspondent was right about my app
