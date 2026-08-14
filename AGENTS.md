@@ -112,23 +112,39 @@ changes, and don't hardcode a provider anywhere else.
 
 ## Deploying
 
-Mirrors carpark-sg: push to `main` → GitHub Actions SSHes to the droplet and
-runs `scripts/deploy.sh` (hard-reset, `npm ci`, build, restart the service).
-`.env.local` and `data/` are gitignored and survive deploys.
+Push to `main` → GitHub Actions SSHes to the droplet and runs
+`scripts/deploy.sh` (hard-reset, `npm ci`, build, restart the service).
 
-The droplet runs three Next apps behind one Caddy, each on its own port and
-systemd unit:
+**The host/port/service table is in `INFRA.md` and is not repeated here.** It
+used to be, listing three apps when there are five — and a stale table in this
+file gets believed over the correct one in the shared contract, because this is
+the file a session actually loads. Same reason the note below is worded as a
+pointer rather than a copy.
 
-| host | port | service |
-|---|---|---|
-| gtfoo.com | 3000 | gtfoo |
-| carpark.gtfoo.com | 3001 | carpark |
-| career-side-quests.gtfoo.com | 3002 | career-side-quests |
+**Nothing this app needs is inside the tree any more.**
 
-Because the deploy hard-resets the tree, anything not in git is lost — except
-gitignored files, which is why the model API key lives in `.env.local` on the
-server and nowhere else. `scripts/provision.sh` is the one-time setup for a
-fresh box and is safe to re-run.
+- Config arrives from a systemd `EnvironmentFile` at
+  `/home/deploy/career-side-quests-data/env`. The in-tree `.env.local` was
+  deleted on 2026-08-12; do not recreate it on the server. `deploy.sh` checks
+  whether a key is reachable from *either* location, so local development with
+  `.env.local` still works unchanged.
+- The database is at `/home/deploy/career-side-quests-data/app.db`, set by
+  `DB_PATH`. There is no in-tree `data/` directory.
+- The service runs the standalone bundle: `node .next/standalone/server.js`,
+  switched 2026-08-11. `deploy.sh` copies `.next/static` and `public` into it,
+  because Next does not, and counts the files afterwards — a missing static
+  directory serves 200 with every asset 404ing.
+
+**`DB_PATH` has an in-tree default, and that is a latent landmine.** It falls
+back to `data/app.db`. The env file overrides it, so this is inert today. But if
+that line is ever lost the app silently starts writing accounts *inside the
+tree* — survivable now, unrecoverable under the proposed `releases/<sha>` +
+`rsync --delete` layout, which deletes anything in the target that is not in the
+build artifact. If that layout is ever adopted, make an unset `DB_PATH` refuse
+to boot rather than fall back.
+
+`scripts/provision.sh` is the one-time setup for a fresh box and is safe to
+re-run.
 
 ## Desktop-first
 
