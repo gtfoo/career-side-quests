@@ -59,18 +59,18 @@ else
   echo "!!  flock unavailable — deploys are NOT serialized on this host." >&2
 fi
 
-# Use whatever Node this host actually has. There is no nvm on the droplet and
-# the system Node is 22; an earlier version of this script asked nvm for 20,
-# which silently did nothing. Pinning a version that is not installed is worse
-# than not pinning one, because the build then differs from the runtime without
-# saying so — and a native addon compiled against the wrong ABI fails at
-# require() time, long after the deploy reports success.
-export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-if [ -s "$NVM_DIR/nvm.sh" ]; then
-  # shellcheck disable=SC1090
-  . "$NVM_DIR/nvm.sh"
-  nvm use --lts >/dev/null 2>&1 || true
-fi
+# Use whatever Node this host actually has, and do NOT try to select one.
+#
+# There is no nvm on the droplet, so an `nvm use` line here does nothing at all
+# where it matters. It is not harmless, though: on a dev machine that does have
+# nvm it fires and pins the build to whatever that resolves to. Measured on this
+# project's own dev box, `nvm use --lts` resolves to N/A — the lts alias is not
+# installed — so it silently selected nothing there either, while the addon in
+# node_modules was built for 22. A pin that is wrong in one place and inert in
+# the other is worse than no pin, because the build then differs from the
+# runtime without saying so.
+#
+# The ABI guard below is the real defence, and it runs unconditionally.
 echo "==> node $(node -v) / npm $(npm -v)"
 
 SERVICE="${SIDEQUESTS_SERVICE:-career-side-quests}"
@@ -134,14 +134,34 @@ fi
 echo "==> next build"
 npm run build
 
-# The standalone server needs these copied in; Next does not do it. Doing it
-# here means the systemd unit can be switched to
-# `node .next/standalone/server.js` without a second round trip — which is what
-# turns 56 MB of currently-unserved build output into the thing actually served.
+# The standalone server needs these copied in; Next does not do it. The unit
+# runs `node .next/standalone/server.js`, so this bundle IS what is served —
+# if the copy fails the site still returns 200 for every page while every
+# stylesheet and script 404s. That failure is invisible to any status-code
+# check, which is why it is checked here and why the check is shaped this way.
+#
+# Two ways to get this wrong, both of which have shipped on this box:
+#
+#  - Swallowing the copy's exit status. `cp … 2>/dev/null || true` cannot fail,
+#    so a failed copy is indistinguishable from a successful one. That is what
+#    this script did until now; it worked only because the copy kept succeeding.
+#  - Guessing a subdirectory to verify. `find .next/static/css` finds nothing
+#    under Tailwind v4, which inlines styles into chunks/ — so the check skips
+#    itself and the deploy reports success having verified nothing. A check that
+#    silently passes is worse than none, because it retires the worry.
+#
+# So: let cp fail loudly, then count ANY file under the copied tree and treat
+# zero as fatal. Don't restart onto a bundle that cannot serve its own assets.
 if [ -d .next/standalone ]; then
-  cp -r .next/static .next/standalone/.next/static 2>/dev/null || true
-  [ -d public ] && cp -r public .next/standalone/public 2>/dev/null || true
-  echo "==> standalone bundle assembled ($(du -sh .next/standalone | cut -f1)) — unit still runs next start"
+  cp -r .next/static .next/standalone/.next/static
+  [ -d public ] && cp -r public .next/standalone/public
+  ASSETS="$(find .next/standalone/.next/static -type f 2>/dev/null | wc -l)"
+  if [ "$ASSETS" -eq 0 ]; then
+    echo "!!  standalone bundle has NO static assets — not restarting." >&2
+    echo "!!  Serving this would return 200 on every page with every asset 404ing." >&2
+    exit 1
+  fi
+  echo "==> standalone bundle assembled ($(du -sh .next/standalone | cut -f1), ${ASSETS} static files)"
 fi
 
 echo "==> restarting ${SERVICE}"

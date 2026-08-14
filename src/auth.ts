@@ -4,6 +4,7 @@ import Google from "next-auth/providers/google";
 import Passkey from "next-auth/providers/passkey";
 import Resend from "next-auth/providers/resend";
 import { PRODUCT } from "@/config/product";
+import { LINK_MINUTES, sendVerificationRequest } from "@/lib/signin-email";
 import { SqliteAdapter } from "@/lib/store/adapter";
 import { tokenVersion, touchUser } from "@/lib/store/db";
 
@@ -54,7 +55,15 @@ if (process.env.AUTH_RESEND_KEY) {
       name: `${PRODUCT.name} sign-in link`,
       // Short-lived: a link that works for a day is a link that works for
       // whoever reads the inbox tomorrow.
-      maxAge: 15 * 60,
+      //
+      // Imported rather than written here, and that is the whole point: the
+      // email states this number in words. Two constants drift silently, and a
+      // message promising fifteen minutes for a token that dies in five
+      // teaches people the app is broken with nothing reporting a fault.
+      maxAge: LINK_MINUTES * 60,
+      // Auth.js's default email never mentions that the link expires, so a
+      // reader returning after twenty minutes gets an unexplained failure.
+      sendVerificationRequest,
     }),
   );
 }
