@@ -13,24 +13,46 @@
   --color-sunken: #dfe5dd;
   --color-ink: #131a16;
   --color-muted: #57635c;
-  --color-faint: #7e8a83;
+  /* Was #7e8a83, which is 3.03:1 on paper. It carries 10-11px mono labels, so
+     large-text allowances do not apply — darkened to clear AA. This palette had
+     never actually rendered until the dark-mode bug below was fixed, which is
+     why a sub-AA value survived in it this long. */
+  --color-faint: #646d67;
   --color-rule: #cbd3cb;
 
   /* Semantic, and separate from any brand accent: what carries over, what is
      missing, what cannot be shortcut. */
   --color-carry: #0e6e62;
-  --color-gap: #a96a0c;
+  /* Was #a96a0c, 3.73:1 on paper — and it sets the "% to close" figure and the
+     gap-kind pills, which are the smallest type on the page. */
+  --color-gap: #965e0b;
   --color-block: #a33f2e;
 }
 
+/*
+ * Dark mode. Plain custom properties on :root — NOT a second `@theme` block.
+ *
+ * This was `@media (prefers-color-scheme: dark) { @theme { … } }`, which does
+ * not do what it reads like. Tailwind v4 hoists every `@theme` to the top level
+ * and drops the wrapping at-rule, so the two blocks merged and the later one
+ * won unconditionally: the light palette never reached the browser at all, and
+ * every visitor got the dark one whatever their OS was set to. Verified in the
+ * compiled stylesheet — neither #e9ede7 nor the string "prefers-color-scheme"
+ * appeared anywhere in it.
+ *
+ * `@theme` is only for defining the tokens (which is what generates the
+ * utilities). Re-pointing them per media query is ordinary CSS and belongs
+ * here, outside it.
+ */
 @media (prefers-color-scheme: dark) {
-  @theme {
+  :root {
     --color-paper: #0f1512;
     --color-surface: #161d19;
     --color-sunken: #1d2621;
     --color-ink: #e4eae5;
     --color-muted: #93a099;
-    --color-faint: #71807a;
+    /* Was #71807a — 4.14:1 on surface, just under AA at the size it is used. */
+    --color-faint: #778680;
     --color-rule: #2a342e;
     --color-carry: #45bfac;
     --color-gap: #dfa24e;
@@ -48,6 +70,21 @@ body {
  * "Save as PDF" is the browser's own print-to-PDF; see src/app/usePrintable.ts
  * for why there is no renderer on the server. Everything below exists because
  * a page that looks right on screen does not print right by default.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THIS BLOCK MUST STAY LAST IN THIS FILE. Do not move it above the dark-mode
+ * block, and do not wrap it in a layer.
+ *
+ * It re-points the same variables the dark block does, at the same specificity
+ * (:root) and in the same layer (none) — so the only thing making it win is
+ * that it comes second. It used to win for a stronger reason: the palette lived
+ * in `@theme`, i.e. inside `@layer theme`, and unlayered styles beat every
+ * layered one regardless of order. Fixing the dark-mode bug above removed that
+ * margin.
+ *
+ * Reordering this silently produces white-text-on-white PDFs for anyone in dark
+ * mode, and nothing anywhere reports a fault.
+ * ─────────────────────────────────────────────────────────────────────────
  */
 @media print {
   /* The trap nobody sees coming: if the reader's OS is in dark mode, the block
