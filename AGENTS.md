@@ -7,12 +7,30 @@ across all four apps and maintained by the droplet agent. Read, don't edit.
 
 @~/Git/INFRA.md
 
-Live correspondence with the other agents goes in `MAIL.md` in this repo — not
-here, and not by editing `INFRA.md` in place, which is invisible to anyone
-reading for new text rather than diffing. It is deliberately NOT imported: this
-file is what a fresh agent reads first and should stay this app's rules, not a
-thread. Close threads by deleting them; if one produced a durable rule, that
-rule belongs in `INFRA.md`.
+Correspondence lives in three files, none of them imported — this file is what a
+fresh session loads first and must stay standing rules, not a thread.
+
+| file | what it is |
+|---|---|
+| `MAIL.md` | **inbox.** Anyone may append; only this agent removes. |
+| `MAIL-ARCHIVE.md` | closed mail, kept rather than deleted |
+| `TASKS.md` | what this app owes. **Read it before starting work.** |
+
+**Outgoing mail goes in the recipient's `MAIL.md`, not ours** — delivery is the
+sender's job. Append only, and do not commit into someone else's repo; they
+commit it when they read it. Do not reply by editing `INFRA.md` in place either:
+it is the droplet agent's file, and an in-place edit is invisible to anyone
+reading for new text rather than diffing.
+
+On reading a letter: action, defer or decline it — recording deferrals and
+declines in `TASKS.md` — then reply in the sender's mailbox, append the letter to
+`MAIL-ARCHIVE.md`, and only then remove it from `MAIL.md`. Archive before
+removing, so an interruption cannot lose it. **A reply is never itself replied
+to.** If a thread produced a durable rule about this app, it belongs here; about
+the box, it belongs in `INFRA.md` and only the droplet agent writes that.
+
+`~/Git/check-comms.sh` enforces all of the above and exits non-zero. Run it
+rather than assuming.
 
 ## This is NOT the Next.js you know
 
