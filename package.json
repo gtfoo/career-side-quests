@@ -13,7 +13,8 @@
     "check-grounding": "tsx scripts/check-grounding.ts",
     "check-signin-email": "tsx scripts/check-signin-email.ts",
     "test": "tsx scripts/test.ts",
-    "measure": "tsx scripts/measure.ts"
+    "measure": "tsx scripts/measure.ts",
+    "mutate-signin-email": "bash scripts/mutate-signin-email.sh"
   },
   "keywords": [],
   "author": "",

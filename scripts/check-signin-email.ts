@@ -55,13 +55,42 @@ ok("the href escapes & as &amp;", href.includes("&amp;") && !/&(?!amp;|lt;|gt;|q
 ok("the token survives intact", decoded.includes("token=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"));
 
 // Some clients refuse or mangle styled links, so the URL must also be readable
-// as text. Two occurrences: the button and the paste-this fallback.
-ok("the URL also appears as copyable text", (html.match(/a1b2c3d4e5f6/g) ?? []).length >= 2);
+// as text.
+//
+// This counted occurrences of the token and wanted two or more — which two
+// href attributes satisfy on their own, with the address readable nowhere.
+// Reword the visible fallback to "click here" and the old form still passed.
+// (The 1-percent-more-fluent agent found this in their copy; it was here too.)
+//
+// Strip every tag, and with it every attribute, then ask whether the address
+// is still there. That is the actual property — a client that discards styling
+// still shows you something you can paste — and it holds whether the fallback
+// is a link or a paragraph.
+const visibleText = html
+  .replace(/<[^>]*>/g, " ")
+  .replace(/&amp;/g, "&")
+  .replace(/&lt;/g, "<")
+  .replace(/&gt;/g, ">")
+  .replace(/&quot;/g, '"');
+ok("the URL is still readable once every tag is stripped", visibleText.includes(URL_IN));
 
 // ------------------------------------------------------- what it must say
 
 for (const [part, body] of [["html", html], ["text", text]] as const) {
-  ok(`${part}: states the expiry in minutes`, body.includes(String(LINK_MINUTES)));
+  // This asked whether the string "15" appeared anywhere in the body, and it
+  // was VACUOUS: the HTML carries `font-size:15px`, so the assertion passed on
+  // the stylesheet. The sentence could have drifted to five minutes, or been
+  // deleted outright, with the check still green.
+  //
+  // Read every duration the message states and require them all to agree with
+  // the constant. `length > 0` is the half that catches deletion; `every` is
+  // the half that catches drift — including a hidden preheader disagreeing with
+  // the visible sentence, which is the drift a reader cannot see.
+  const stated = [...body.matchAll(/(\d+)\s*minutes?\b/g)].map((m) => Number(m[1]));
+  ok(
+    `${part}: states an expiry, and every duration stated is LINK_MINUTES`,
+    stated.length > 0 && stated.every((n) => n === LINK_MINUTES),
+  );
   ok(`${part}: says the link is single use`, /once|single use/i.test(body));
   ok(`${part}: names the product`, body.includes(PRODUCT.name));
   ok(`${part}: tells an unexpecting reader they can ignore it`, /ignore/i.test(body));
