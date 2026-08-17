@@ -9,7 +9,13 @@ build/
 .env*.local
 
 # Runtime data (SQLite, caches). Survives deploys; not tracked.
-data/
+#
+# Anchored to the repo root. Unanchored, `data/` matches a directory of that
+# name at ANY depth — which silently swallowed src/app/data, the account page,
+# so the commit adding it went through without it and the route kept 404ing in
+# production. `git add` reports this on stderr and carries on, so the only
+# symptom is a file that is simply never there.
+/data/
 
 # Anything a user uploaded. Resumes are PII — they must never reach git.
 uploads/
