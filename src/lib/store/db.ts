@@ -154,6 +154,50 @@ export function touchUser(id: string): void {
     .run(new Date().toISOString(), id);
 }
 
+/**
+ * Aggregate counts for `gtfoo.com/admin`. Counts only: no ids, no emails, no
+ * per-person timestamps ever leave this function — see `src/lib/report.ts`.
+ *
+ * `passkeyOffered` is passed in rather than inferred from the tables, and that
+ * distinction is the whole point. The contract's rule is that `null` means
+ * *this app does not offer that method* and `0` means *it does and nobody has
+ * used it* — so the answer depends on the RUNTIME config, not on whether an
+ * `authenticators` table happens to exist. Passkeys here are behind
+ * `AUTH_PASSKEYS` and are off in production, so the honest value is null;
+ * reporting 0 would advertise a sign-in method nobody can actually use.
+ */
+export function userCounts(passkeyOffered: boolean): {
+  total: number;
+  magic_link: number | null;
+  passkey: number | null;
+  active_30d: number | null;
+} {
+  const db = getDb();
+  const n = (sql: string, ...args: unknown[]) =>
+    (db.prepare(sql).get(...args) as { n: number }).n;
+
+  const cutoff = new Date(Date.now() - 30 * 864e5).toISOString();
+
+  return {
+    // "Completed sign-in at least once" — a row only exists here after a link
+    // was actually redeemed, so this needs no extra condition.
+    total: n(`SELECT count(*) AS n FROM users`),
+    // Every account here is created by redeeming a magic link; OAuth is the
+    // only other path that can create one, so excluding accounts rows keeps
+    // this correct if GitHub or Google is ever switched on. A user who signs
+    // in by link and later links OAuth would drop out — acceptable, and worth
+    // revisiting only if that path is enabled.
+    magic_link: n(
+      `SELECT count(*) AS n FROM users
+        WHERE id NOT IN (SELECT user_id FROM accounts)`,
+    ),
+    passkey: passkeyOffered
+      ? n(`SELECT count(DISTINCT user_id) AS n FROM authenticators`)
+      : null,
+    active_30d: n(`SELECT count(*) AS n FROM users WHERE last_seen_at >= ?`, cutoff),
+  };
+}
+
 /** Invalidate every session for a user — the kill switch after a leak. */
 export function bumpTokenVersion(id: string): void {
   getDb()

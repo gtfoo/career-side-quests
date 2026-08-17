@@ -12,7 +12,7 @@
  * `npm run spike` is for. Keeping the two separate matters: a green suite here
  * means the machinery is sound, not that the assessment is good.
  */
-import { rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -505,6 +505,30 @@ section("saved reads belong to exactly one account");
   mkUser("alice", "alice@example.com");
   mkUser("bob", "bob@example.com");
 
+  // The counts gtfoo.com/admin renders. Exercised against the real schema
+  // because the risk here is a silently wrong SQL join, not a wrong shape —
+  // report.ts is tested separately and would happily serialise nonsense.
+  {
+    conn
+      .prepare(
+        `UPDATE users SET last_seen_at = ? WHERE id = 'bob'`,
+      )
+      .run(new Date(Date.now() - 90 * 864e5).toISOString());
+
+    const offered = db.userCounts(true);
+    check("total counts every account", offered.total, 2);
+    check("magic_link counts accounts with no OAuth row", offered.magic_link, 2);
+    check("active_30d excludes a user last seen 90 days ago", offered.active_30d, 1);
+    // Offered but unused is 0 — a real number, and the thing null must not be
+    // collapsed into.
+    check("a method offered but unused is 0, not null", offered.passkey, 0);
+
+    // And the distinction the contract exists for: passkeys are behind
+    // AUTH_PASSKEYS and off in production, so the honest answer is "not
+    // offered" rather than "nobody uses it".
+    check("a method not offered is null, not 0", db.userCounts(false).passkey, null);
+  }
+
   const aliceRead = db.saveRead({
     userId: "alice",
     title: "Solutions Engineer",
@@ -905,9 +929,95 @@ async function pdfTests() {
   );
 }
 
+/**
+ * What this app reports to /var/lib/usage.
+ *
+ * Worth testing despite being three small functions: these files are read by
+ * another app's dashboard, so a mistake here shows up as gtfoo's bug, and the
+ * two rules most likely to be got wrong — UTC stamps and null-vs-zero — both
+ * fail silently and look plausible.
+ */
+async function reportTests() {
+  section("what this app reports about itself");
+
+  const dir = join(tmpdir(), `csq-report-${process.pid}`);
+  mkdirSync(dir, { recursive: true });
+  process.env.USAGE_DIR = dir;
+  const report = await import("../src/lib/report");
+
+  report.recordUsage({
+    provider: "openai",
+    model: "gpt-5",
+    op: "match",
+    in_tokens: 1200,
+    out_tokens: 300,
+    status: "ok",
+  });
+  report.writeUserCounts({ total: 3, magic_link: 3, passkey: null, active_30d: 1 });
+  // Both writers are fire-and-forget, so nothing is awaited in production and
+  // the test has to wait for the write it deliberately did not await.
+  await new Promise((r) => setTimeout(r, 120));
+
+  const line = JSON.parse(
+    readFileSync(join(dir, "career-side-quests.jsonl"), "utf8").trim(),
+  );
+  const counts = JSON.parse(
+    readFileSync(join(dir, "career-side-quests.users.json"), "utf8"),
+  );
+
+  // The dashboard compares ts LEXICOGRAPHICALLY against a cutoff string rather
+  // than parsing it, so an offset stamp is a valid instant that sorts as though
+  // it were UTC and drifts in and out of the window silently.
+  ok("usage ts ends in Z, never an offset", /Z$/.test(line.ts));
+  ok("usage ts has no fractional seconds", !/\.\d+Z$/.test(line.ts));
+  ok("counts generated is UTC too", /Z$/.test(counts.generated));
+
+  check("the app names itself", line.app, "career-side-quests");
+  check("requests defaults to 1", line.requests, 1);
+  check("units is null for a token-billed call", line.units, null);
+  // Not 0. A figure computed from a hardcoded price table would sit on the
+  // dashboard looking like a measurement, beside a real balance poll that
+  // disagrees with it.
+  check("usd is null — unmeasured, not free", line.usd, null);
+  ok("usd is present rather than absent", "usd" in line);
+
+  // The distinction the whole file exists to preserve: null means the method
+  // is not offered, 0 would mean it is offered and unused.
+  check("a method not offered is null", counts.users.passkey, null);
+  ok("null passkey is present, not omitted", "passkey" in counts.users);
+  check("a method that is offered reports a number", counts.users.magic_link, 3);
+
+  // Over 4096 bytes an O_APPEND write can interleave with another app's line,
+  // and the corruption reads as malformed JSON from whichever app is blamed
+  // second.
+  report.recordUsage({
+    provider: "openai",
+    op: "x".repeat(9000),
+    status: "error",
+  });
+  await new Promise((r) => setTimeout(r, 120));
+  const lines = readFileSync(join(dir, "career-side-quests.jsonl"), "utf8")
+    .trim()
+    .split("\n");
+  ok("an oversized line is truncated, not written", lines[1]!.length <= 4096);
+  ok("and it is still valid JSON", Boolean(JSON.parse(lines[1]!).provider));
+  ok("every line parses", lines.every((l) => Boolean(JSON.parse(l))));
+
+  // A missing directory is the normal case on a dev machine.
+  process.env.USAGE_DIR = join(dir, "does", "not", "exist");
+  report.recordUsage({ provider: "openai", status: "ok" });
+  report.writeUserCounts({ total: 0, magic_link: 0, passkey: null, active_30d: 0 });
+  await new Promise((r) => setTimeout(r, 120));
+  ok("an unwritable target is silent, never thrown", true);
+
+  rmSync(dir, { recursive: true, force: true });
+  delete process.env.USAGE_DIR;
+}
+
 filenameTests();
 
-pdfTests()
+reportTests()
+  .then(() => pdfTests())
   .then(() => {
     console.log(`\n${failed === 0 ? "✓" : "✗"} ${passed} passed, ${failed} failed`);
     if (failures.length) {

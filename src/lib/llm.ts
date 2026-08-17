@@ -6,6 +6,7 @@ import { generateObject, type LanguageModel } from "ai";
 import type { z } from "zod";
 import { assertSpendAllowed } from "./spend";
 import { ledger } from "./usage";
+import { recordUsage } from "./report";
 
 /**
  * The single place a model is chosen, built on the Vercel AI SDK so swapping
@@ -463,6 +464,18 @@ export async function generate<T>(args: {
         cachedInputTokens: u?.cachedInputTokens ?? 0,
         isRetry: args.isRetry ?? false,
       });
+      // The same event, to the box-level dashboard. Separate from the ledger
+      // above because they answer different questions: the ledger is one
+      // process's report at the end of a run, this is a durable cross-app
+      // record of what was spent and when.
+      recordUsage({
+        provider: spec.split(":")[0]!,
+        model: spec.split(":").slice(1).join(":"),
+        op: args.stage,
+        in_tokens: res.usage?.inputTokens ?? 0,
+        out_tokens: res.usage?.outputTokens ?? 0,
+        status: "ok",
+      });
 
       return {
         object: res.object as T,
@@ -474,6 +487,27 @@ export async function generate<T>(args: {
       };
     } catch (err) {
       lastErr = err;
+      // Failures are recorded, not just successes. On a free tier a 429 is the
+      // only trustworthy evidence of where the ceiling actually sits, because
+      // the documented limits move without notice — and a fallback that fires
+      // constantly is invisible from a success-only log.
+      //
+      // Narrower than shouldFallback() on purpose: that deliberately conflates
+      // quota, billing, 404s and overload because for FALLBACK they all mean
+      // "try the next model". Here they are different facts and flattening
+      // them would make a billing failure read as a rate limit.
+      recordUsage({
+        provider: spec.split(":")[0]!,
+        model: spec.split(":").slice(1).join(":"),
+        op: args.stage,
+        in_tokens: null,
+        out_tokens: null,
+        status: /quota|rate.?limit|429|resource.?exhausted|overloaded|529/i.test(
+          errorText(err),
+        )
+          ? "rate_limited"
+          : "error",
+      });
       const hasNext = i < specs.length - 1;
       if (hasNext && shouldFallback(err)) {
         console.warn(

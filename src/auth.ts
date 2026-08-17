@@ -6,7 +6,8 @@ import Resend from "next-auth/providers/resend";
 import { PRODUCT } from "@/config/product";
 import { LINK_MINUTES, sendVerificationRequest } from "@/lib/signin-email";
 import { SqliteAdapter } from "@/lib/store/adapter";
-import { tokenVersion, touchUser } from "@/lib/store/db";
+import { tokenVersion, touchUser, userCounts } from "@/lib/store/db";
+import { writeUserCounts } from "@/lib/report";
 
 /**
  * Sign-in.
@@ -150,7 +151,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
   },
+
+  events: {
+    /**
+     * Refresh the count that gtfoo.com/admin renders.
+     *
+     * In `events`, not `callbacks`, deliberately: an event cannot change the
+     * outcome of the sign-in, which is exactly the guarantee wanted from
+     * something that exists only to report a number. `reportUserCounts`
+     * swallows its own errors and is never awaited, so a full disk cannot turn
+     * a successful sign-in into a failed one.
+     */
+    signIn() {
+      reportUserCounts();
+    },
+  },
 });
+
+/**
+ * Publish the aggregate counts. Safe to call when auth is unconfigured or the
+ * database does not exist yet — it fails silently, which is right for
+ * instrumentation and is what makes it safe to call at startup too.
+ */
+export function reportUserCounts(): void {
+  try {
+    writeUserCounts(userCounts(passkeysConfigured()));
+  } catch {
+    // No database yet, or no permission on the target directory. Neither is
+    // worth a log line on every sign-in, and neither is the caller's problem.
+  }
+}
 
 /**
  * Is sign-in usable at all?
