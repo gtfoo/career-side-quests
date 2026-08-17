@@ -14,6 +14,21 @@ date.
 
 ## Open
 
+- [ ] **Set `AUTH_PASSKEYS=1` in the production env** —
+      `/home/deploy/career-side-quests-data/env`. The whole passkey flow shipped
+      2026-08-17 (registration and revocation on `/data`, adapter fixed) but the
+      provider is not registered until this is set, so no user can reach it and
+      the counts file correctly reports `passkey: null`. Owner's to set; I have
+      no write access to the droplet.
+      `from: owner asked for passkeys · blocked on one env line`
+
+- [ ] **`AUTH_SECRET` in `.env.local` ends with a stray quote** — 45 characters,
+      a trailing `"` with no opening one. Harmless while both sides read the
+      same string, and sign-in works, but it means the secret is not what was
+      intended and a regeneration would change behaviour silently. Worth
+      checking the production copy has not got the same.
+      `from: this agent · found while minting a test session`
+
 - [ ] **Progressive rendering for the read.** A full read takes ~384s and the
       screen shows a spinner for all of it. This is the largest usability
       problem in the app and nothing else on this list is close. The pipeline
