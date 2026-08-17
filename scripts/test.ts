@@ -42,6 +42,7 @@ import * as ratelimit from "../src/lib/ratelimit";
 import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
 import * as db from "../src/lib/store/db";
 import * as passkeys from "../src/lib/store/passkeys";
+import { SqliteAdapter } from "../src/lib/store/adapter";
 import * as localStore from "../src/lib/store/local";
 import { deriveGaps } from "../src/lib/pipeline/assess";
 import { checkBrief } from "../src/lib/pipeline/quest";
@@ -586,6 +587,39 @@ section("saved reads belong to exactly one account");
   rmSync(tmp, { force: true });
   rmSync(`${tmp}-wal`, { force: true });
   rmSync(`${tmp}-shm`, { force: true });
+}
+
+section("the adapter satisfies the WebAuthn provider");
+
+{
+  // This exists because the failure it catches is completely invisible until
+  // the day someone enables the feature. `getAccount` was missing: with
+  // AUTH_PASSKEYS off the app is perfectly healthy, and the moment it is on,
+  // Auth.js validates the adapter up front and EVERY auth route returns 500
+  // MissingAdapterMethods — sign-in link included, so turning on passkeys
+  // takes out the sign-in that was already working. Nothing warns at build
+  // time and the type checker does not require these, because the base Adapter
+  // type marks them optional.
+  const adapter = SqliteAdapter() as Record<string, unknown>;
+  for (const m of [
+    "getAccount",
+    "getAuthenticator",
+    "createAuthenticator",
+    "listAuthenticatorsByUserId",
+    "updateAuthenticatorCounter",
+  ]) {
+    ok(`adapter implements ${m}`, typeof adapter[m] === "function");
+  }
+  // The base methods the email flow needs, so a passkey change cannot quietly
+  // remove one.
+  for (const m of [
+    "createUser",
+    "getUserByEmail",
+    "createVerificationToken",
+    "useVerificationToken",
+  ]) {
+    ok(`adapter still implements ${m}`, typeof adapter[m] === "function");
+  }
 }
 
 section("passkeys are scoped to their owner");

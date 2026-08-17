@@ -121,6 +121,37 @@ export function SqliteAdapter(): Adapter {
 
     // ---------------------------------------------------------- passkeys
 
+    /**
+     * Required by the WebAuthn provider, and its absence does not degrade
+     * gracefully: Auth.js validates the adapter up front and every auth route
+     * returns 500 `MissingAdapterMethods` the moment passkeys are switched on.
+     * Nothing warns at build time, and with the flag off the app looks
+     * perfectly healthy — which is why this was missing for so long while the
+     * rest of the passkey code appeared complete.
+     */
+    async getAccount(providerAccountId, provider) {
+      const row = getDb()
+        .prepare(
+          `SELECT user_id, provider, provider_account_id, type FROM accounts
+            WHERE provider_account_id = ? AND provider = ?`,
+        )
+        .get(providerAccountId, provider) as
+        | {
+            user_id: string;
+            provider: string;
+            provider_account_id: string;
+            type: string;
+          }
+        | undefined;
+      if (!row) return null;
+      return {
+        userId: row.user_id,
+        provider: row.provider,
+        providerAccountId: row.provider_account_id,
+        type: row.type as "webauthn",
+      };
+    },
+
     async getAuthenticator(credentialID) {
       return toAuthenticator(
         getDb()

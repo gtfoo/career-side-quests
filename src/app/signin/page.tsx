@@ -6,6 +6,7 @@ import {
   signIn,
 } from "@/auth";
 import { PRODUCT } from "@/config/product";
+import { PasskeyButton } from "./PasskeyButton";
 
 /**
  * Sign in.
@@ -121,28 +122,7 @@ export default async function SignIn() {
           </>
         )}
 
-        {passkeysConfigured() && (
-          <form
-            action={async () => {
-              "use server";
-              await signIn("passkey", { redirectTo: "/data" });
-            }}
-          >
-            <button
-              type="submit"
-              className="w-full border border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-3 font-mono text-xs uppercase tracking-wider hover:border-[var(--color-ink)]"
-            >
-              Use a passkey
-            </button>
-            {/* Stated because the distinction is easy to get wrong: a passkey
-                lives on THIS device. It is a shortcut back in, not a way onto
-                a machine you have never used. */}
-            <span className="mt-1.5 block font-mono text-[11px] text-[var(--color-faint)]">
-              For a device you&rsquo;ve already set one up on. Email works
-              anywhere.
-            </span>
-          </form>
-        )}
+        {passkeysConfigured() && <PasskeyButton />}
       </div>
 
       <p className="mt-10 border-t border-[var(--color-rule)] pt-4 text-[13px] leading-relaxed text-[var(--color-muted)]">
