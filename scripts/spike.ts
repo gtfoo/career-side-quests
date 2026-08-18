@@ -64,6 +64,7 @@ function median(xs: number[]): number {
 }
 
 async function main() {
+  const startedAt = Date.now();
   const postingArg = arg("posting");
   const cvArg = arg("cv");
   const runs = Number(arg("runs") ?? 3);
@@ -177,7 +178,7 @@ async function main() {
 
   // Cost belongs next to stability: the whole point of comparing strategies is
   // that one may be cheaper AND worse, and neither number decides alone.
-  console.log("\n" + ledger.report("what this cost"));
+  console.log("\n" + ledger.report("what this cost", Date.now() - startedAt));
 
   console.log(
     spread <= 10

@@ -442,6 +442,7 @@ export async function generate<T>(args: {
 
   for (let i = 0; i < specs.length; i++) {
     const spec = specs[i]!;
+    const startedAt = Date.now();
     try {
       const res = await generateObject({
         model: resolveModel(spec),
@@ -463,6 +464,7 @@ export async function generate<T>(args: {
         reasoningTokens: u?.reasoningTokens ?? 0,
         cachedInputTokens: u?.cachedInputTokens ?? 0,
         isRetry: args.isRetry ?? false,
+        ms: Date.now() - startedAt,
       });
       // The same event, to the box-level dashboard. Separate from the ledger
       // above because they answer different questions: the ledger is one

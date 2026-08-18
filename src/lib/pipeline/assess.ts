@@ -146,13 +146,24 @@ export async function runRead(args: {
   const flags: ReadResult["flags"] = [];
   const models: Record<string, string> = {};
 
-  const jd = await extractJobTarget(snapshot);
+  // The posting and the CV share nothing: different inputs, different prompts,
+  // and neither reads the other's output. They were two independent round trips
+  // taken one after the other, so the shorter one sat on the critical path for
+  // no reason. Matching cannot begin until both are done either way, so this
+  // costs the longer of the two instead of their sum.
+  //
+  // Promise.all rather than allSettled, deliberately: if either extraction
+  // fails there is no read to produce, and the first rejection should surface
+  // as itself rather than be repackaged into a summary.
+  const [jd, ev] = await Promise.all([
+    extractJobTarget(snapshot),
+    extractCandidate(docs, notes),
+  ]);
+
   models.extract_jd = jd.modelSpec;
   for (const i of jd.issues) {
     flags.push({ stage: "job description", problem: `${i.path}: ${i.problem}` });
   }
-
-  const ev = await extractCandidate(docs, notes);
   models.extract_evidence = ev.modelSpec;
   for (const i of ev.issues) {
     flags.push({ stage: "your materials", problem: `${i.path}: ${i.problem}` });

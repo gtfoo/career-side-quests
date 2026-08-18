@@ -30,6 +30,15 @@ export type CallRecord = {
   cachedInputTokens: number;
   /** Retries are counted separately — they are pure waste and worth seeing. */
   isRetry: boolean;
+  /**
+   * Wall-clock for this one call.
+   *
+   * Summed, this is MODEL time, which is not the same as the time a user waits
+   * — calls overlap. Reported next to the wall clock precisely so the gap
+   * between them is visible: that gap IS the parallelism, and without it a
+   * claim that something "runs in parallel" is untestable.
+   */
+  ms: number;
 };
 
 /** Per-1M-token prices, input/output. Update when a provider's pricing moves. */
@@ -69,6 +78,9 @@ export class UsageLedger {
       // COST problem rather than only a quality one.
       wastedInput: retries.reduce((n, c) => n + c.inputTokens, 0),
       wastedOutput: retries.reduce((n, c) => n + c.outputTokens, 0),
+      modelMs: this.calls.reduce((n, c) => n + c.ms, 0),
+      wastedMs: retries.reduce((n, c) => n + c.ms, 0),
+      slowestMs: this.calls.reduce((n, c) => Math.max(n, c.ms), 0),
       cost: this.cost(this.calls),
       wastedCost: this.cost(retries),
     };
@@ -85,21 +97,29 @@ export class UsageLedger {
   byStage() {
     const map = new Map<
       string,
-      { calls: number; input: number; output: number; cost: number }
+      { calls: number; input: number; output: number; cost: number; ms: number }
     >();
     for (const c of this.calls) {
-      const cur = map.get(c.stage) ?? { calls: 0, input: 0, output: 0, cost: 0 };
+      const cur = map.get(c.stage) ?? {
+        calls: 0,
+        input: 0,
+        output: 0,
+        cost: 0,
+        ms: 0,
+      };
       cur.calls++;
       cur.input += c.inputTokens;
       cur.output += c.outputTokens;
+      cur.ms += c.ms;
       cur.cost += this.cost([c]);
       map.set(c.stage, cur);
     }
-    return [...map.entries()].sort((a, b) => b[1].cost - a[1].cost);
+    return [...map.entries()].sort((a, b) => b[1].ms - a[1].ms);
   }
 
-  report(label = "usage"): string {
+  report(label = "usage", wallMs?: number): string {
     const t = this.totals();
+    const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
     const lines = [
       `── ${label}`,
       `  calls        ${t.calls}${t.retries ? ` (${t.retries} were retries)` : ""}`,
@@ -112,7 +132,21 @@ export class UsageLedger {
           : ""
       }`,
       `  cost         $${t.cost.toFixed(4)}`,
+      // Model time is the sum of every call; the wall clock is what a person
+      // sat through. Their ratio is the only honest measure of how much
+      // parallelism is actually being had.
+      `  model time   ${secs(t.modelMs)} across ${t.calls} calls, slowest ${secs(t.slowestMs)}`,
     ];
+    if (wallMs !== undefined) {
+      const speedup = t.modelMs / Math.max(wallMs, 1);
+      lines.push(
+        `  wall clock   ${secs(wallMs)} — ${speedup.toFixed(1)}x overlap` +
+          (speedup < 1.5 ? "  <- effectively serial" : ""),
+      );
+    }
+    if (t.wastedMs) {
+      lines.push(`  wasted time  ${secs(t.wastedMs)} on retries`);
+    }
     if (t.retries) {
       lines.push(
         `  wasted       $${t.wastedCost.toFixed(4)} on retries (${((t.wastedCost / t.cost) * 100).toFixed(0)}% of spend)`,
@@ -122,7 +156,8 @@ export class UsageLedger {
     for (const [stage, s] of this.byStage()) {
       lines.push(
         `    ${stage.padEnd(18)} ${String(s.calls).padStart(3)} calls  ` +
-          `${String(s.input).padStart(7)} in  ${String(s.output).padStart(6)} out  $${s.cost.toFixed(4)}`,
+          `${String(s.input).padStart(7)} in  ${String(s.output).padStart(6)} out  ` +
+          `$${s.cost.toFixed(4)}  ${secs(s.ms).padStart(7)}`,
       );
     }
     return lines.join("\n");

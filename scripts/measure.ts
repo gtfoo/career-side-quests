@@ -41,6 +41,7 @@ async function loadPosting(input: string): Promise<PostingSnapshot> {
 }
 
 async function main() {
+  const startedAt = Date.now();
   const postingArg = arg("posting");
   const cvArg = arg("cv");
   if (!postingArg || !cvArg) {
@@ -132,7 +133,7 @@ async function main() {
     }
   }
 
-  console.log("\n" + ledger.report("cost of ONE read"));
+  console.log("\n" + ledger.report("cost of ONE read", Date.now() - startedAt));
 
   const t = ledger.totals();
   console.log("\n── extrapolation");

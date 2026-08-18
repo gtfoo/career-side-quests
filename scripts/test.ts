@@ -38,6 +38,7 @@ import {
 } from "../src/lib/pipeline/validate";
 import { readFilename } from "../src/lib/filename";
 import { resolveChain } from "../src/lib/llm";
+import { UsageLedger } from "../src/lib/usage";
 import * as ratelimit from "../src/lib/ratelimit";
 import { requireExplicitApproval, spendAllowed } from "../src/lib/spend";
 import * as db from "../src/lib/store/db";
@@ -620,6 +621,50 @@ section("the adapter satisfies the WebAuthn provider");
   ]) {
     ok(`adapter still implements ${m}`, typeof adapter[m] === "function");
   }
+}
+
+section("the timing report distinguishes overlap from speed");
+
+{
+  // This is the instrument the "is it actually parallel?" question gets
+  // answered with, so it is worth pinning. Summed model time is NOT what a user
+  // waits: calls overlap. The ratio between them is the whole signal.
+  const l = new UsageLedger();
+  const call = (stage: string, ms: number, retry = false) => ({
+    stage,
+    modelSpec: "openai:gpt-5",
+    inputTokens: 100,
+    outputTokens: 50,
+    reasoningTokens: 0,
+    cachedInputTokens: 0,
+    isRetry: retry,
+    ms,
+  });
+
+  for (const c of [call("match", 4000), call("match", 4000), call("match", 4000)]) {
+    l.record(c);
+  }
+  const t = l.totals();
+  check("model time sums every call", t.modelMs, 12000);
+  check("slowest call is tracked for the critical path", t.slowestMs, 4000);
+
+  // Three 4s calls finishing in 4.2s of wall clock is ~3x overlap: parallel.
+  const parallel = l.report("x", 4200);
+  ok("near-perfect overlap reports ~2.9x", parallel.includes("2.9x overlap"));
+  ok("and is not flagged as serial", !parallel.includes("effectively serial"));
+
+  // The same three calls taking 12s ran one after another, and the report has
+  // to say so — a "parallel" pipeline that quietly serialised is exactly the
+  // regression this exists to catch.
+  const serial = l.report("x", 12000);
+  ok("no overlap reports 1.0x", serial.includes("1.0x overlap"));
+  ok("and is called out as serial", serial.includes("effectively serial"));
+
+  const l2 = new UsageLedger();
+  l2.record(call("match", 3000));
+  l2.record(call("match", 5000, true));
+  check("retry time is attributed as waste", l2.totals().wastedMs, 5000);
+  ok("and shown", l2.report("x").includes("wasted time"));
 }
 
 section("passkeys are scoped to their owner");
