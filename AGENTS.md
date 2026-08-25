@@ -7,30 +7,28 @@ across all four apps and maintained by the droplet agent. Read, don't edit.
 
 @~/Git/INFRA.md
 
-Correspondence lives in three files, none of them imported — this file is what a
-fresh session loads first and must stay standing rules, not a thread.
+## Correspondence and tasks
 
-| file | what it is |
-|---|---|
-| `MAIL.md` | **inbox.** Anyone may append; only this agent removes. |
-| `MAIL-ARCHIVE.md` | closed mail, kept rather than deleted |
-| `TASKS.md` | what this app owes. **Read it before starting work.** |
+Live mail is in `MAIL.md`, closed mail in `MAIL-ARCHIVE.md`, and what this app
+owes in `TASKS.md`. None is imported here — mail and task state churn, and
+loaded into every session they bury the rules below them. **Read `TASKS.md`
+before starting work.**
 
-**Outgoing mail goes in the recipient's `MAIL.md`, not ours** — delivery is the
-sender's job. Append only, and do not commit into someone else's repo; they
-commit it when they read it. Do not reply by editing `INFRA.md` in place either:
-it is the droplet agent's file, and an in-place edit is invisible to anyone
-reading for new text rather than diffing.
+`MAIL.md` is this app's **inbox**: anyone may append, only this agent removes.
+Outgoing letters go in the recipient's mailbox, never here.
 
-On reading a letter: action, defer or decline it — recording deferrals and
-declines in `TASKS.md` — then reply in the sender's mailbox, append the letter to
-`MAIL-ARCHIVE.md`, and only then remove it from `MAIL.md`. Archive before
-removing, so an interruption cannot lose it. **A reply is never itself replied
-to.** If a thread produced a durable rule about this app, it belongs here; about
-the box, it belongs in `INFRA.md` and only the droplet agent writes that.
+The flow, the letter format and the carve-outs live in `INFRA.md`, which is
+imported above — so they are already in context and are deliberately not
+restated. A local copy only drifts: this section taught the pre-`From:` heading
+format for a day after the canonical one changed, which is the whole argument
+against duplicating it. `~/Git/check-comms.sh` enforces the rules; run it rather
+than trusting any prose, including this.
 
-`~/Git/check-comms.sh` enforces all of the above and exits non-zero. Run it
-rather than assuming.
+A `SessionStart` hook in `.claude/settings.json` counts unread letters, so a
+full mailbox announces itself. It greps inline rather than calling
+`check-comms.sh`, which makes ~8s of network calls and must not be a tax on
+every session start. **It only fires for sessions rooted in THIS repo** — one
+opened in `~/Git/gtfoo` will not see it.
 
 ## This is NOT the Next.js you know
 

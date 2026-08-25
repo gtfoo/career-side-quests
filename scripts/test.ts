@@ -1060,6 +1060,32 @@ async function reportTests() {
   check("usd is null — unmeasured, not free", line.usd, null);
   ok("usd is present rather than absent", "usd" in line);
 
+  // Cache fields: the same unmeasured-vs-zero rule. A provider that reports
+  // nothing has not told us the call read zero from cache.
+  report.recordUsage({
+    provider: "anthropic",
+    model: "claude-opus-4-8",
+    op: "match",
+    in_tokens: 5000,
+    out_tokens: 200,
+    in_cache_read: 4200,
+    in_cache_write: null,
+    status: "ok",
+  });
+  await new Promise((r) => setTimeout(r, 120));
+  const cached = JSON.parse(
+    readFileSync(join(dir, "career-side-quests.jsonl"), "utf8").trim().split("\n")[1]!,
+  );
+  check("cache reads are reported", cached.in_cache_read, 4200);
+  check("an unreported cache write stays null", cached.in_cache_write, null);
+  ok("and is present rather than omitted", "in_cache_write" in cached);
+  // Rule 9: cache tokens sit INSIDE in_tokens, not beside it. Were they
+  // additive, the dashboard would double-count every cached call.
+  ok(
+    "cache reads are a subset of in_tokens, not an addition",
+    cached.in_cache_read <= cached.in_tokens,
+  );
+
   // The distinction the whole file exists to preserve: null means the method
   // is not offered, 0 would mean it is offered and unused.
   check("a method not offered is null", counts.users.passkey, null);
@@ -1078,8 +1104,9 @@ async function reportTests() {
   const lines = readFileSync(join(dir, "career-side-quests.jsonl"), "utf8")
     .trim()
     .split("\n");
-  ok("an oversized line is truncated, not written", lines[1]!.length <= 4096);
-  ok("and it is still valid JSON", Boolean(JSON.parse(lines[1]!).provider));
+  const last = lines[lines.length - 1]!;
+  ok("an oversized line is truncated, not written", last.length <= 4096);
+  ok("and it is still valid JSON", Boolean(JSON.parse(last).provider));
   ok("every line parses", lines.every((l) => Boolean(JSON.parse(l))));
 
   // A missing directory is the normal case on a dev machine.

@@ -34,6 +34,19 @@ export type UsageLine = {
   requests?: number;
   in_tokens?: number | null;
   out_tokens?: number | null;
+  /**
+   * Cache tokens, counted INSIDE in_tokens rather than beside it — rule 9 of
+   * the usage contract. `null` where the provider does not report them, which
+   * is the same unmeasured-vs-zero distinction as `usd`: 0 would claim a call
+   * read nothing from cache, and unreported is not that claim.
+   *
+   * This app cares more than most. Its fan-out is built around a shared prompt
+   * prefix, so most input on a read is a cache READ at roughly a tenth of the
+   * price of a fresh token. A ledger that cannot tell them apart makes a
+   * deliberately cheap design look like the most expensive app on the box.
+   */
+  in_cache_read?: number | null;
+  in_cache_write?: number | null;
   /** Non-token billing only (characters, credits). Null for LLM calls. */
   units?: number | null;
   status: "ok" | "rate_limited" | "error";

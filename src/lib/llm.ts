@@ -454,7 +454,11 @@ export async function generate<T>(args: {
       });
       // Record before returning, so no successful call can escape accounting.
       const u = res.usage as
-        | { reasoningTokens?: number; cachedInputTokens?: number }
+        | {
+            reasoningTokens?: number;
+            cachedInputTokens?: number;
+            cacheCreationInputTokens?: number;
+          }
         | undefined;
       ledger.record({
         stage: args.stage,
@@ -476,6 +480,11 @@ export async function generate<T>(args: {
         op: args.stage,
         in_tokens: res.usage?.inputTokens ?? 0,
         out_tokens: res.usage?.outputTokens ?? 0,
+        // `?? null`, never `?? 0`. A provider that does not report cache usage
+        // has told us nothing, and zero would assert that the call read
+        // nothing from cache — a measurement nobody took.
+        in_cache_read: u?.cachedInputTokens ?? null,
+        in_cache_write: u?.cacheCreationInputTokens ?? null,
         status: "ok",
       });
 
