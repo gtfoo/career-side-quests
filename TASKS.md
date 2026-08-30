@@ -71,11 +71,20 @@ date.
 - [ ] **Phase 2 pilot — accepted, awaiting approval.** This app volunteered and
       the droplet agent recorded it under Current phase, conditional on two
       things being *in* the pilot rather than follow-ups: pin `runs-on:
-      ubuntu-24.04` (never `ubuntu-latest`) and Node 22 exactly, because the
-      `better-sqlite3` binary ships inside the artifact and inherits the
-      runner's glibc; and relocate the ABI guard to run after the rsync and
-      before the symlink flip, since there will be no build on the droplet for
-      the current guard to check.
+      ubuntu-24.04` (never `ubuntu-latest`) and `node-version: 22.23.2`
+      exactly, because the `better-sqlite3` binary ships inside the artifact
+      and inherits the runner's glibc; and relocate the ABI guard to run after
+      the rsync and before the symlink flip, since there will be no build on
+      the droplet for the current guard to check.
+      **`runs-on: ubuntu-latest` is CORRECT today and becomes wrong the moment
+      the build moves.** The workflow is a pure SSH deployer — no checkout, no
+      `setup-node`, no `npm` — so the runner is an SSH client and its Node is
+      irrelevant. Audited 2026-08-30 and found clean. The trap is that nothing
+      is wrong beforehand, so there is no failing check to remind anyone: it is
+      a migration step, not a defect. `carpark-sg/.github/workflows/deploy.yml`
+      is the fleet's only existing `setup-node` if a reference is wanted.
+      Local side is already ready: `.nvmrc` says 22, and the addon constructs
+      under v22.23.2 after the owner's WSL update — verified, not assumed.
       `from: droplet · phase 2 consultation · BLOCKED: "nothing is approved and
       nothing is scheduled, please do not implement any of this"`
 
