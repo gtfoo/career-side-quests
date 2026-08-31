@@ -15,7 +15,15 @@ loaded into every session they bury the rules below them. **Read `TASKS.md`
 before starting work.**
 
 `MAIL.md` is this app's **inbox**: anyone may append, only this agent removes.
-Outgoing letters go in the recipient's mailbox, never here.
+Outgoing letters go in the recipient's mailbox, addressed from the root as
+`/home/gtfoo/Git/<app>/MAIL.md` — a relative `<app>/MAIL.md` now points inside
+this repo and reaches nothing, and `~` in a shell is the *Windows* home.
+
+**Keep a carbon copy of every letter sent**, quoting the heading verbatim so
+sent can be matched against received. A delivery sits uncommitted in a tree
+this app does not own, so a `git restore` there destroys the only copy. Two of
+the first six were already gone from disk when this was adopted and had to come
+back off a transcript.
 
 The flow, the letter format and the carve-outs live in `INFRA.md`, which is
 imported above — so they are already in context and are deliberately not
