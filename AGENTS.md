@@ -27,8 +27,11 @@ than trusting any prose, including this.
 A `SessionStart` hook in `.claude/settings.json` counts unread letters, so a
 full mailbox announces itself. It greps inline rather than calling
 `check-comms.sh`, which makes ~8s of network calls and must not be a tax on
-every session start. **It only fires for sessions rooted in THIS repo** — one
-opened in `~/Git/gtfoo` will not see it.
+every session start. **It only fires for sessions rooted in THIS repo.** For a long time
+sessions opened in `~/Git/gtfoo`, so it read that mailbox and announced
+someone else's mail — five of five apps had the hook and one was reached.
+Fixed by the owner moving the working directory here, not by changing the
+hook.
 
 ## This is NOT the Next.js you know
 
@@ -125,6 +128,19 @@ Preference order is **OpenAI → Anthropic → Google**. The first provider with
 key becomes the primary; the next distinct one runs the adversarial pass. This
 order is a project decision, not a technical one — change `PROVIDER_ORDER` if it
 changes, and don't hardcode a provider anywhere else.
+
+## Local dev runs on `.nvmrc`, not on a pinned path
+
+**Never pin a Node path in `.claude/launch.json`.** It sat upstream of
+everything — `.nvmrc`, `nvm use`, and the constructing `better-sqlite3` guard,
+which runs under whatever Node the shell already has. This config pinned
+`node/v20.20.2` in its `PATH` while `.nvmrc` said 22, so starting the dev server
+from it loaded an addon built for the wrong ABI and every database request
+failed. It now sources nvm and runs bare `nvm use`, which reads `.nvmrc`; the
+`&&` chain means a failure to select stops the server rather than silently
+serving on the wrong runtime. gtfoo keeps a second config for this app in their
+own `launch.json`, also on 3002 — if this port ever moves, theirs goes stale
+with no warning.
 
 ## Deploying
 
