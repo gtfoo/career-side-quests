@@ -778,10 +778,15 @@ section("a CV never reaches a provider that trains on input");
       "ANTHROPIC_API_KEY",
       "GOOGLE_GENERATIVE_AI_API_KEY",
       "GOOGLE_PAID_TIER",
-      "MODEL_MATCH",
-      "MODEL_DEFAULT",
     ])
       delete process.env[k];
+    // Every MODEL_* override, not a hand-kept list. The list missed
+    // MODEL_EXTRACT_JD, so a new case setting it leaked into the next
+    // assertion and failed a test that had nothing to do with it — the
+    // confusing direction, because the broken-looking test was innocent.
+    for (const k of Object.keys(process.env)) {
+      if (k.startsWith("MODEL_")) delete process.env[k];
+    }
   };
 
   // Google free tier trains on submissions and permits human review, so it may
@@ -800,6 +805,31 @@ section("a CV never reaches a provider that trains on input");
   ok(
     "matching may not",
     !resolveChain("match").some((s) => s.startsWith("google:")),
+  );
+
+  // An UNRECOGNISED provider is assumed to train on input. This is the case
+  // nothing else covers: the filter used to wave through every provider except
+  // Google by name, so a new one would have inherited "safe for personal data"
+  // without anyone reading its terms. MODEL_* overrides are the only way an
+  // unknown name reaches the chain, and they are exactly where a stranger
+  // arrives.
+  reset();
+  process.env.OPENAI_API_KEY = "y";
+  process.env.MODEL_MATCH = "typesafe/jev-latest:jev,openai:gpt-5";
+  ok(
+    "an unknown provider is dropped from a stage that sees the CV",
+    !resolveChain("match").some((m) => m.startsWith("typesafe")),
+  );
+  ok(
+    "and the safe provider still serves the stage",
+    resolveChain("match").some((m) => m.startsWith("openai:")),
+  );
+  reset();
+  process.env.OPENAI_API_KEY = "y";
+  process.env.MODEL_EXTRACT_JD = "typesafe/jev-latest:jev";
+  ok(
+    "but the public posting may use it — the boundary is the CV, not the vendor",
+    resolveChain("extract_jd").some((m) => m.startsWith("typesafe")),
   );
 
   // Running out of paid credit is not a reason to send a CV somewhere unsafe.

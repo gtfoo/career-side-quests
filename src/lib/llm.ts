@@ -189,8 +189,30 @@ const STAGE_SEES_USER_DATA: Record<Stage, boolean> = {
  * OpenAI and Anthropic both state they do not train on API data by default.
  */
 function mayTrainOnInput(provider: string): boolean {
-  if (provider !== "google") return false;
-  return process.env.GOOGLE_PAID_TIER !== "true";
+  switch (provider) {
+    // Checked against their API terms. Not a guess, and not permanent — if a
+    // term changes, this is the line that has to change with it.
+    case "openai":
+    case "anthropic":
+      return false;
+    // Free tier trains and permits human review; paid does not, and nothing in
+    // the API response says which a key is on. So: assume free.
+    case "google":
+      return process.env.GOOGLE_PAID_TIER !== "true";
+    // DEFAULT-DENY. Anything unrecognised is assumed to train on input.
+    //
+    // This read `provider !== "google" ? false : …`, so every provider except
+    // Google was waved through by NAME — including any that did not exist yet.
+    // Adding one would have silently inherited "safe", which is the wrong
+    // default for a boundary whose whole job is to be checked before use. The
+    // spend gate in this codebase is default-deny for the same reason.
+    //
+    // Surfaced by the Jev review: reaching it means clearing TypeSafe AND
+    // Requesty, two parties, and under the old code neither would have been
+    // asked. To add a provider here, read its terms and say so in a comment.
+    default:
+      return true;
+  }
 }
 
 /** Effort/thinking is provider-specific, so it lives with the model choice. */

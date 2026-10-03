@@ -25,12 +25,22 @@ this app does not own, so a `git restore` there destroys the only copy. Two of
 the first six were already gone from disk when this was adopted and had to come
 back off a transcript.
 
-The flow, the letter format and the carve-outs live in `INFRA.md`, which is
-imported above — so they are already in context and are deliberately not
-restated. A local copy only drifts: this section taught the pre-`From:` heading
-format for a day after the canonical one changed, which is the whole argument
-against duplicating it. `~/Git/check-comms.sh` enforces the rules; run it rather
-than trusting any prose, including this.
+The flow, the letter format and the carbon-copy shape live in
+`/home/gtfoo/Git/COMMS.md` as of 2026-09-04, and it is **not imported** — read it
+when about to write a letter. The rules that stayed in `INFRA.md`, which is
+imported, are the ones that fire when you are *not* thinking about mail: the
+dirty-mailbox warning, never committing someone else's inbox, append-only.
+
+Still not restated here. This section claimed they were in `INFRA.md` "so they
+are already in context" for four weeks after they moved out — the second time
+this exact paragraph has gone stale, which is the argument against paraphrasing
+rather than pointing. `/home/gtfoo/Git/check-comms.sh` enforces the rules; run it
+rather than trusting any prose, including this.
+
+**Local dev ports: 3920-3929.** A band outside the served range, so it cannot
+collide with anyone's production port. The served port stays 3002. The earlier
+"block above your allocated port" rule handed four of six apps a neighbour's
+port — both of mine were allocated to live apps.
 
 A `SessionStart` hook in `.claude/settings.json` counts unread letters, so a
 full mailbox announces itself. It greps inline rather than calling
@@ -103,6 +113,13 @@ If every configured provider trains on input, a read **fails** rather than
 proceeding. Running out of paid credit is not a reason to send someone's resume
 somewhere it can be trained on.
 
+**`mayTrainOnInput()` is default-deny: an unrecognised provider is assumed to
+train on input.** It used to return false for everything except Google by name,
+so a provider added later inherited "safe for personal data" without anyone
+reading its terms. Adding one means reading those terms and saying so in a
+comment next to its case. Surfaced by the Jev review, where the candidate
+arrives via a reseller and clearing it would mean checking two parties.
+
 Do not weaken this to make a demo work.
 
 ## Never spend tokens without being asked
@@ -130,7 +147,14 @@ npm run check-grounding  quote grounder, both directions
 `src/lib/llm.ts` is provider-agnostic (Vercel AI SDK) on purpose: the adversarial
 pass is meant to run on a *different lab's* model than the scoring pass, because
 same-model self-critique shares the same blind spots. Set the provider per stage
-via env, and settle disputes with the eval set in `evals/`, not by preference.
+via env, and settle disputes by measurement rather than by preference.
+
+**There is no `evals/` directory.** This file claimed one twice, as the place
+model disputes are settled. Nothing is there, so today a model question has no
+empirical answer available — which came up when Jev was proposed and had to be
+declined partly on that ground. `npm run spike` and `npm run measure` compare
+runs and cost a model call each; a real eval set is unbuilt and is in
+`TASKS.md`.
 
 Preference order is **OpenAI → Anthropic → Google**. The first provider with a
 key becomes the primary; the next distinct one runs the adversarial pass. This

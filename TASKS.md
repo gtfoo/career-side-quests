@@ -14,6 +14,16 @@ date.
 
 ## Open
 
+- [ ] **Build the eval set `AGENTS.md` has been claiming for weeks.** That file
+      said twice that model disputes are settled with "the eval set in
+      `evals/`", and no such directory exists — so there is currently no way to
+      answer a model question empirically, which is the stated rule. It came up
+      directly: Jev could not be assessed on the merits because there is
+      nothing to assess against. `npm run spike` and `npm run measure` compare
+      single runs and cost a model call each; a fixed set of CV/posting pairs
+      with expected levels is what the rule assumes exists.
+      `from: this agent · found while reviewing Jev · AGENTS.md corrected to stop claiming it`
+
 - [ ] **Set `AUTH_PASSKEYS=1` in the production env** —
       `/home/deploy/career-side-quests-data/env`. The whole passkey flow shipped
       2026-08-17 (registration and revocation on `/data`, adapter fixed) but the
@@ -110,3 +120,41 @@ again, and the second refusal costs the same conversation as the first.
       not to treat this app as a consumer yet, so reformatting need not wait.
       `from: droplet · analytics interface contract · revisit only if this app
       needs something gtfoo's dashboard cannot show`
+
+- [x] **Jev (`typesafe/jev-latest`) for the `match` stage.** Reviewed 2026-10-02
+      on the gtfoo agent's write-up. The structural fit is real and they were
+      right about it: this app already splits "model returns a rubric level"
+      from "code computes the number", which is exactly Jev's Score primitive,
+      and it was built to solve the problem Jev was trained against — ask a
+      model for a percentage and you get a plausible one that moves when you
+      rephrase. Measured 30/30 agreement against Sonnet 4.6's 27/30, 369ms
+      median against 947ms, roughly a third of the cost.
+
+      Declined on three grounds, in order of how decisive they are:
+
+      1. **The privacy gate, which is not a cost question.** `match` sees the
+         candidate's own material, so it may only use a provider that does not
+         train on input — and Jev is reached through Requesty, making two
+         parties to clear, not one. Nobody has read either set of terms. That
+         check comes before any cost or latency preference by rule.
+      2. **It cannot produce the quote.** Every score here cites a verbatim
+         span of the CV, verified as a literal substring, and that check is the
+         hallucination guard rather than a presentation choice. Jev selects
+         from a predefined answer space; it cannot hand back a span. The only
+         shape that survives is a hybrid — an LLM extracts candidate spans,
+         Jev scores given those spans — which doubles the calls on the heaviest
+         path in the app.
+      3. **Nothing to measure it with.** See the eval-set item above.
+
+      Worth keeping rather than dismissing: the hybrid might be *cheaper* in
+      spite of doubling calls, because 85-88% of output spend on this path is
+      reasoning tokens on an expensive model, and the span-extraction half is a
+      mechanical substring-checkable task that belongs on a cheap one. That is
+      a measurement, not an argument, and it needs the eval set first.
+
+      Also noted: it cannot abstain on a binary question, which runs against
+      this app's habit of declining — `cannot_shortcut` gaps, `usd: null`,
+      flagged ungrounded claims. A probability is honest in a way a confident
+      sentence is not, but the discipline would move into thresholds I own.
+      `from: gtfoo agent · informational, "your application, your call" · revisit
+      if the terms clear AND an eval set exists`
